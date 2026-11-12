@@ -1,0 +1,35 @@
+name: Release
+
+# Publishes lockra-sdk and lockra-mcp to npm when a GitHub Release is published.
+# Requires the repository secret NPM_TOKEN (an npm "Automation" token).
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+      - run: npm install --no-audit --no-fund
+      - run: npm test
+      - name: Live test against drand quicknet
+        run: npm run test:live -w lockra-sdk
+      - name: Publish lockra-sdk
+        run: npm publish -w lockra-sdk --access public --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - name: Publish lockra-mcp
+        run: npm publish -w lockra-mcp --access public --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

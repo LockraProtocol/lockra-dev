@@ -1,0 +1,21 @@
+import { hmac } from '../hashes/hmac.js';
+import { concatBytes, randomBytes } from '../hashes/utils.js';
+import { weierstrass } from './abstract/weierstrass.js';
+
+export function getHash(hash) {
+    return {
+        hash,
+        hmac: (key, ...msgs)=>hmac(hash, key, concatBytes(...msgs)),
+        randomBytes
+    };
+}
+export function createCurve(curveDef, defHash) {
+    const create = (hash)=>weierstrass({
+            ...curveDef,
+            ...getHash(hash)
+        });
+    return Object.freeze({
+        ...create(defHash),
+        create
+    });
+}

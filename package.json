@@ -1,0 +1,18 @@
+{
+  "name": "lockra-dev",
+  "private": true,
+  "description": "LOCKRA developer tools: the lockra-sdk library and the lockra-mcp server.",
+  "license": "MIT",
+  "type": "module",
+  "workspaces": [
+    "packages/sdk",
+    "packages/mcp"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "npm test --workspaces",
+    "typecheck": "npm run typecheck -w lockra-sdk"
+  }
+}

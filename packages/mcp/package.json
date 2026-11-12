@@ -1,0 +1,49 @@
+{
+  "name": "lockra-mcp",
+  "version": "1.0.0",
+  "description": "Model Context Protocol server for LOCKRA. Lets AI agents seal and open timelock-encrypted capsules that nobody can read before their date.",
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "mcp-server",
+    "ai-agents",
+    "lockra",
+    "timelock",
+    "drand",
+    "encryption",
+    "time-capsule"
+  ],
+  "homepage": "https://lockra.buzz",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LockraProtocol/lockra-dev.git",
+    "directory": "packages/mcp"
+  },
+  "bugs": "https://github.com/LockraProtocol/lockra-dev/issues",
+  "license": "MIT",
+  "author": "LOCKRA (https://lockra.buzz)",
+  "type": "module",
+  "bin": {
+    "lockra-mcp": "bin/lockra-mcp.js"
+  },
+  "exports": {
+    ".": "./src/server.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "bin",
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "lockra-sdk": "^1.0.0"
+  },
+  "scripts": {
+    "test": "node --test \"test/**/*.test.js\"",
+    "start": "node bin/lockra-mcp.js"
+  }
+}

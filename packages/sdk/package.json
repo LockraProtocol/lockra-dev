@@ -1,0 +1,52 @@
+{
+  "name": "lockra-sdk",
+  "version": "1.0.0",
+  "description": "Timelock encryption for JavaScript. Seal messages and files that nobody can open before a chosen date, secured by the drand threshold network. Compatible with lockra.buzz.",
+  "keywords": [
+    "lockra",
+    "timelock",
+    "time-lock",
+    "tlock",
+    "drand",
+    "encryption",
+    "time-capsule",
+    "bls12-381",
+    "commit-reveal",
+    "web3"
+  ],
+  "homepage": "https://lockra.buzz",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LockraProtocol/lockra-dev.git",
+    "directory": "packages/sdk"
+  },
+  "bugs": "https://github.com/LockraProtocol/lockra-dev/issues",
+  "license": "MIT",
+  "author": "LOCKRA (https://lockra.buzz)",
+  "type": "module",
+  "main": "./src/index.js",
+  "types": "./index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "default": "./src/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "src",
+    "index.d.ts",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "sideEffects": false,
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test \"test/**/*.test.js\"",
+    "test:live": "LOCKRA_LIVE=1 node --test \"test/**/*.test.js\"",
+    "typecheck": "tsc -p tsconfig.json"
+  }
+}
