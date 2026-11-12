@@ -1,6 +1,6 @@
 {
   "name": "lockra-sdk",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Timelock encryption for JavaScript. Seal messages and files that nobody can open before a chosen date, secured by the drand threshold network. Compatible with lockra.buzz.",
   "keywords": [
     "lockra",

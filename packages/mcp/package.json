@@ -1,6 +1,6 @@
 {
   "name": "lockra-mcp",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Model Context Protocol server for LOCKRA. Lets AI agents seal and open timelock-encrypted capsules that nobody can read before their date.",
   "keywords": [
     "mcp",
@@ -40,7 +40,7 @@
     "node": ">=20"
   },
   "dependencies": {
-    "lockra-sdk": "^1.0.1"
+    "lockra-sdk": "^1.0.2"
   },
   "scripts": {
     "test": "node --test test/mcp.test.js",

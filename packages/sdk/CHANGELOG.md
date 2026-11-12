@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.2
+
+- First release published from GitHub Actions with npm Trusted Publishing.
+
 ## 1.0.1
 
 - Docs: npm and CI badges, link to the source repository.
