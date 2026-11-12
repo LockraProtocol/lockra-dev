@@ -43,7 +43,7 @@
     "lockra-sdk": "^1.0.0"
   },
   "scripts": {
-    "test": "node --test \"test/**/*.test.js\"",
+    "test": "node --test test/mcp.test.js",
     "start": "node bin/lockra-mcp.js"
   }
 }

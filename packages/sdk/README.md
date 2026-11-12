@@ -166,7 +166,7 @@ The construction is compatible with [drand/tlock](https://github.com/drand/tlock
 
 ```sh
 npm test            # offline suite with a local test beacon
-npm run test:live   # also runs against the real drand quicknet network
+npm run test:live   # end-to-end checks against the real drand quicknet network
 npm run typecheck
 ```
 

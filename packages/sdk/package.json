@@ -45,8 +45,8 @@
     "node": ">=20"
   },
   "scripts": {
-    "test": "node --test \"test/**/*.test.js\"",
-    "test:live": "LOCKRA_LIVE=1 node --test \"test/**/*.test.js\"",
+    "test": "node --test test/sdk.test.js test/compat.test.js test/live.test.js",
+    "test:live": "LOCKRA_LIVE=1 node --test test/live.test.js",
     "typecheck": "tsc -p tsconfig.json"
   }
 }
