@@ -1,0 +1,19 @@
+{
+  "name": "lockra-telegram-bot",
+  "version": "1.0.0",
+  "private": true,
+  "description": "The LOCKRA Telegram bot: seal and open timelock capsules from Telegram. Built on lockra-sdk.",
+  "license": "MIT",
+  "author": "LOCKRA (https://lockra.buzz)",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "lockra-sdk": "^1.0.2"
+  },
+  "scripts": {
+    "start": "node bin/start.js",
+    "test": "node --test test/parse.test.js test/bot.test.js test/telegram.test.js"
+  }
+}
