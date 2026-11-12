@@ -1,7 +1,8 @@
 name: Release
 
 # Publishes lockra-sdk and lockra-mcp to npm when a GitHub Release is published.
-# Requires the repository secret NPM_TOKEN (an npm "Automation" token).
+# Uses npm Trusted Publishing (OIDC): no npm token is stored in GitHub.
+# Each package lists this repository and release.yml as its trusted publisher on npmjs.com.
 
 on:
   release:
@@ -21,15 +22,13 @@ jobs:
         with:
           node-version: 22
           registry-url: https://registry.npmjs.org
+      - name: Use an npm version that supports trusted publishing
+        run: npm install -g npm@11
       - run: npm install --no-audit --no-fund
       - run: npm test
       - name: Live test against drand quicknet
         run: npm run test:live -w lockra-sdk
       - name: Publish lockra-sdk
-        run: npm publish -w lockra-sdk --access public --provenance
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish -w lockra-sdk --access public
       - name: Publish lockra-mcp
-        run: npm publish -w lockra-mcp --access public --provenance
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish -w lockra-mcp --access public

@@ -56,3 +56,15 @@ npm publish -w lockra-sdk
 ```
 
 Update `SERVER_VERSION` in `packages/mcp/src/server.js` together with the MCP package version.
+
+## Trusted Publishing
+
+After the first release, releases are published from GitHub Actions with npm Trusted Publishing (OIDC),
+so no npm token is stored anywhere. On npmjs.com, each package (`lockra-sdk`, `lockra-mcp`) has
+Settings → Trusted Publisher → GitHub Actions configured with:
+
+- Organization or user: `LockraProtocol`
+- Repository: `lockra-dev`
+- Workflow filename: `release.yml`
+
+To release: bump the versions, push, then publish a GitHub Release.
