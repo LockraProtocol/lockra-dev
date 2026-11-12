@@ -6,6 +6,7 @@ Timelock encryption for apps and AI agents. Seal a message or a file so that nob
 | ------------------------------- | ---------------------------------------------------- |
 | [`lockra-sdk`](packages/sdk)    | JavaScript / TypeScript library. Zero dependencies.  |
 | [`lockra-mcp`](packages/mcp)    | MCP server so AI agents can seal and open capsules.  |
+| [Telegram bot](apps/telegram-bot) | Seal and open capsules from Telegram.           |
 
 ```js
 import { seal, open } from 'lockra-sdk';

@@ -1,12 +1,13 @@
 {
   "name": "lockra-dev",
   "private": true,
-  "description": "LOCKRA developer tools: the lockra-sdk library and the lockra-mcp server.",
+  "description": "LOCKRA developer tools: the lockra-sdk library, the lockra-mcp server and the LOCKRA Telegram bot.",
   "license": "MIT",
   "type": "module",
   "workspaces": [
     "packages/sdk",
-    "packages/mcp"
+    "packages/mcp",
+    "apps/telegram-bot"
   ],
   "engines": {
     "node": ">=20"
