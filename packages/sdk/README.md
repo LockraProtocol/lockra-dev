@@ -1,5 +1,7 @@
 # lockra-sdk
 
+[![npm](https://img.shields.io/npm/v/lockra-sdk.svg)](https://www.npmjs.com/package/lockra-sdk) [![CI](https://github.com/LockraProtocol/lockra-dev/actions/workflows/ci.yml/badge.svg)](https://github.com/LockraProtocol/lockra-dev/actions/workflows/ci.yml) [![license](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/LockraProtocol/lockra-dev/blob/main/LICENSE)
+
 **Timelock encryption for JavaScript.** Seal a message or a file so that nobody can open it before a date you choose: not the recipient, not LOCKRA, not even you.
 
 ```js
@@ -173,3 +175,5 @@ npm run typecheck
 ## License
 
 MIT © LOCKRA. Bundles [noble-curves](https://github.com/paulmillr/noble-curves) and [noble-hashes](https://github.com/paulmillr/noble-hashes) (MIT © Paul Miller), see `src/vendor`.
+
+Source: [github.com/LockraProtocol/lockra-dev](https://github.com/LockraProtocol/lockra-dev)

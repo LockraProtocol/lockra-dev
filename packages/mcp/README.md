@@ -1,5 +1,7 @@
 # lockra-mcp
 
+[![npm](https://img.shields.io/npm/v/lockra-mcp.svg)](https://www.npmjs.com/package/lockra-mcp) [![CI](https://github.com/LockraProtocol/lockra-dev/actions/workflows/ci.yml/badge.svg)](https://github.com/LockraProtocol/lockra-dev/actions/workflows/ci.yml) [![license](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/LockraProtocol/lockra-dev/blob/main/LICENSE)
+
 **LOCKRA for AI agents.** A [Model Context Protocol](https://modelcontextprotocol.io) server that lets Claude, Cursor and any MCP-compatible agent seal messages that nobody can read before a chosen date, and open them afterwards.
 
 > "Seal my prediction that ETH flips 10k before June, unlock it on June 1st, and give me the link."
@@ -82,3 +84,5 @@ const response = await server.handle({ jsonrpc: '2.0', id: 1, method: 'tools/lis
 ## License
 
 MIT © LOCKRA. Built on [lockra-sdk](https://www.npmjs.com/package/lockra-sdk).
+
+Source: [github.com/LockraProtocol/lockra-dev](https://github.com/LockraProtocol/lockra-dev)

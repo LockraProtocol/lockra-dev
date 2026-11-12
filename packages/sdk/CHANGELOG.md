@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.1
+
+- Docs: npm and CI badges, link to the source repository.
+- Releases are now published with npm Trusted Publishing.
+
 ## 1.0.0
 
 First public release.
