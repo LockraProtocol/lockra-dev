@@ -29,6 +29,10 @@ jobs:
       - name: Live test against drand quicknet
         run: npm run test:live -w lockra-sdk
       - name: Publish lockra-sdk
-        run: npm publish -w lockra-sdk --access public
+        run: |
+          v=$(node -p "require('./packages/sdk/package.json').version")
+          if npm view lockra-sdk@$v version >/dev/null 2>&1; then echo "lockra-sdk@$v is already published, skipping"; else npm publish -w lockra-sdk --access public; fi
       - name: Publish lockra-mcp
-        run: npm publish -w lockra-mcp --access public
+        run: |
+          v=$(node -p "require('./packages/mcp/package.json').version")
+          if npm view lockra-mcp@$v version >/dev/null 2>&1; then echo "lockra-mcp@$v is already published, skipping"; else npm publish -w lockra-mcp --access public; fi
