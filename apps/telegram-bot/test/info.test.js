@@ -93,7 +93,7 @@ describe('/raffle and /stats commands', () => {
     await bot.handleUpdate({ update_id: 1, message: { message_id: 1, text: '/raffle@Lockra_bot', chat: { id: -1, type: 'supergroup' }, from: { id: 2 } } });
     assert.equal(calls[0].p.text, 'R');
     assert.equal(calls[0].p.reply_markup.inline_keyboard[0][0].url, 'https://lockra.buzz/raffle');
-    await bot.handleUpdate({ update_id: 2, message: { message_id: 2, text: '/stats', chat: { id: -1, type: 'supergroup' }, from: { id: 2 } } });
+    await bot.handleUpdate({ update_id: 2, message: { message_id: 2, text: '/lockra', chat: { id: -1, type: 'supergroup' }, from: { id: 2 } } });
     assert.equal(calls[1].p.text, 'S');
   });
 
