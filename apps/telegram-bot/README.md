@@ -71,6 +71,7 @@ Turn it on:
 | `ALERT_MIN_USD` | No | Skip buys smaller than this many dollars. Default `0`. |
 | `ALERT_STEP_USD` | No | One emoji per this many dollars, up to 30. Default `10`. |
 | `ALERT_EMOJI` | No | Emoji used for the buy strength line. Default `🟢`. |
+| `ALERT_EMOJI_ID` | No | A custom (animated) Telegram emoji for the strength line. Send the emoji to the bot in a private chat to get its id. Telegram may require the bot to own a Fragment username to show custom emoji; otherwise `ALERT_EMOJI` is shown. |
 | `ALERT_MEDIA` | No | GIF or video sent with each alert. Send it to the bot in a private chat and it replies with the exact value to use (`video:…` or `animation:…`). A direct URL also works. |
 | `BURN_MEDIA` | No | GIF or video for burn alerts, same format as `ALERT_MEDIA`. Defaults to `ALERT_MEDIA`. |
 | `ALERT_BURNS` | No | Set to `false` to skip burn alerts. |

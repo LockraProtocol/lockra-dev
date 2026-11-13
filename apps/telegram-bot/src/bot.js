@@ -177,6 +177,8 @@ export function createBot({ call, username, sdkOptions = {}, now = Date.now, log
   async function handleUpdate(update) {
     const msg = update.message;
     if (msg && msg.chat.type === 'private' && (msg.animation || msg.video)) return await onMedia(msg).catch((e) => log(`media failed: ${e?.message ?? e}`));
+    const custom = msg?.chat.type === 'private' && (msg.entities || []).filter((e) => e.type === 'custom_emoji');
+    if (custom?.length) return await reply(msg, ['😀 <b>Custom emoji for buy alerts</b>', '', 'Set this as <code>ALERT_EMOJI_ID</code> on your host:', ...[...new Set(custom.map((e) => e.custom_emoji_id))].map((id) => `<code>${esc(id)}</code>`)].join('\n')).catch((e) => log(`emoji failed: ${e?.message ?? e}`));
     const text = msg?.text;
     if (!msg || !text) return;
     const cmd = parseCommand(text, username);
