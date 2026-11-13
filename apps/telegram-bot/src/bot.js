@@ -151,6 +151,18 @@ export function createBot({ call, username, sdkOptions = {}, now = Date.now, log
     });
   }
 
+  // Send the bot a GIF or video in a private chat to get the value for ALERT_MEDIA.
+  function onMedia(msg) {
+    const kind = msg.animation ? 'animation' : 'video';
+    const id = (msg.animation || msg.video).file_id;
+    return reply(msg, [
+      '🎬 <b>Media for buy alerts</b>',
+      '',
+      'Set this as <code>ALERT_MEDIA</code> on your host:',
+      `<code>${kind}:${esc(id)}</code>`,
+    ].join('\n'));
+  }
+
   async function onStart(msg, args) {
     if (args === 'seal') return reply(msg, SEAL_USAGE);
     return reply(msg, HELP);
@@ -159,6 +171,7 @@ export function createBot({ call, username, sdkOptions = {}, now = Date.now, log
   /** Handle one Telegram update. Never throws for user-facing errors. */
   async function handleUpdate(update) {
     const msg = update.message;
+    if (msg && msg.chat.type === 'private' && (msg.animation || msg.video)) return await onMedia(msg).catch((e) => log(`media failed: ${e?.message ?? e}`));
     const text = msg?.text;
     if (!msg || !text) return;
     const cmd = parseCommand(text, username);

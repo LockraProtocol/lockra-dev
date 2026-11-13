@@ -150,3 +150,14 @@ describe('createAlerts', () => {
     assert.equal(sent.length, 0);
   });
 });
+
+test('run() does not pile up abort listeners while polling', async () => {
+  const { getEventListeners } = await import('node:events');
+  const c = new AbortController();
+  const alerts = createAlerts({ rpc: async () => '0x1', send: async () => {}, chats: ['-1'], token: TOKEN, explorer: 'https://x' });
+  const running = alerts.run({ signal: c.signal, intervalMs: 1 });
+  await new Promise((r) => setTimeout(r, 60));
+  assert.ok(getEventListeners(c.signal, 'abort').length <= 1);
+  c.abort();
+  await running;
+});
