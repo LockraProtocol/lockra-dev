@@ -59,7 +59,7 @@ if (chats.length) {
     token: tokenAddress,
     pools: (process.env.POOL_ADDRESSES || '').split(',').map((s) => s.trim()).filter(Boolean),
     explorer,
-    ethUsd: createEthPrice(explorer),
+    ethUsd: createEthPrice(explorer, fetch, tokenAddress),
     minUsd: Number(process.env.ALERT_MIN_USD || 0),
     step: Number(process.env.ALERT_STEP_USD || 10),
     emoji: process.env.ALERT_EMOJI || '🟢',
