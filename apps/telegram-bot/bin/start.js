@@ -84,6 +84,7 @@ const info = createInfo({
     prize: process.env.RAFFLE_PRIZE || '$500 jackpot by FOBO',
   },
   lastPrice: () => alerts?.lastPrice() ?? null,
+  log,
 });
 info.raffleUrl = raffleUrl;
 const bot = createBot({ call: telegram.call, username: me.username, log, info });
