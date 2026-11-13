@@ -62,9 +62,9 @@ describe('messages', () => {
     const ev = { type: 'buy', buyer: BUYER, tx: '0xabc', amount: 100_000n * E18, quote: { token: WETH, value: E18 / 10n } };
     const html = buyMessage({ ev, symbol: 'LOCKRA', decimals: 18, quoteSymbol: 'WETH', quoteDecimals: 18, quoteUsd: 3000, supply: 1_000_000_000n * E18, links });
     assert.match(html, /<b>\$LOCKRA Buy!<\/b>/);
-    assert.match(html, /💰 0\.1 WETH \(\$300\.00\)/);
-    assert.match(html, /🔒 100,000 \$LOCKRA/);
-    assert.match(html, /tx\/0xabc/);
+    assert.match(html, /↗ 0\.1 WETH \(\$300\.00\)/);
+    assert.match(html, /↙ 100K \$LOCKRA/);
+    assert.match(html, /address\/0x3333/);
     assert.match(html, /Market cap \$3\.00M/); // 300 / 100k * 1B
     assert.equal((html.match(/🟢/g) || []).length, 30);
   });
@@ -125,10 +125,10 @@ describe('createAlerts', () => {
     await alerts.tick();
     await alerts.tick();
     assert.equal(sent.length, 2);
-    assert.match(sent[0].html, /Buy!.*\n.*\n\n💰 0\.1 WETH \(\$300\.00\)/s);
+    assert.match(sent[0].html, /Buy!.*\n.*\n\n↗ 0\.1 WETH \(\$300\.00\)/s);
     assert.match(sent[1].html, /Burn!/);
     assert.deepEqual(sent.map((x) => x.type), ['buy', 'burn']);
-    assert.match(sent[1].html, /🎟 1 raffle ticket\n/);
+    assert.match(sent[1].html, /🎟 1 raffle ticket\n👤/);
   });
 
   test('does not post sells', async () => {
@@ -208,7 +208,18 @@ test('stablecoin buys are valued 1:1 and small ones are filtered by the minimum'
   mine([tr(USDG, ROUTER, POOL, 120_000_000n), tr(TOKEN, POOL, BUYER, 800_000n * E18)], '0xbig'); // $120
   await alerts.tick();
   assert.equal(sent.length, 1);
-  assert.match(sent[0], /💰 120 USDG \(\$120\.00\)/);
+  assert.match(sent[0], /↗ 120 USDG \(\$120\.00\)/);
   assert.equal((sent[0].match(/🟢/g) || []).length, 12);
   assert.match(sent[0], /Market cap \$150,000/); // 120 / 800k * 1B
+});
+
+test('position: new holder or growth of an existing bag', async () => {
+  const { buyMessage, formatCompact } = await import('../src/alerts.js');
+  const base = { ev: { buyer: BUYER, tx: '0x1', amount: 100n * E18, quote: { token: WETH, value: E18 } }, symbol: 'LOCKRA', decimals: 18, quoteSymbol: 'WETH', quoteDecimals: 18, links: { explorer: 'https://x' } };
+  assert.match(buyMessage({ ...base, before: 0n }), /🆕 New holder/);
+  assert.match(buyMessage({ ...base, before: 862n * E18 }), /Position \+11\.6%/);
+  assert.doesNotMatch(buyMessage(base), /Position|New holder/);
+  assert.equal(formatCompact(99_812.4), '99.8K');
+  assert.equal(formatCompact(2_530_000), '2.53M');
+  assert.equal(formatCompact(1_000), '1K');
 });
