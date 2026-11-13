@@ -296,3 +296,22 @@ test('a native ETH sell is not posted', async () => {
   assert.ok(netChange(logs, TOKEN, BUYER) < 0n);
   assert.equal(classify(logs, { token: TOKEN, contracts: new Set([PM]), signer: BUYER }).length, 0);
 });
+
+test('a swap that splits its output (fee cut + buyer) is one buy, for the buyer', () => {
+  const FEE = '0x7777777777777777777777777777777777777777';
+  const logs = [tr(WETH, ROUTER, POOL, E18 / 10n), tr(TOKEN, POOL, FEE, 7_900n * E18), tr(TOKEN, POOL, BUYER, 921_000n * E18)];
+  const buys = classify(logs, { token: TOKEN, contracts: new Set([POOL, ROUTER]), signer: BUYER }).filter((e) => e.type === 'buy');
+  assert.equal(buys.length, 1);
+  assert.equal(buys[0].buyer, BUYER);
+  assert.equal(buys[0].amount, 921_000n * E18);
+  const noSigner = classify(logs, { token: TOKEN, contracts: new Set([POOL, ROUTER]) }).filter((e) => e.type === 'buy');
+  assert.equal(noSigner.length, 1);
+  assert.equal(noSigner[0].buyer, BUYER, 'largest recipient wins');
+});
+
+test('dust before a buy counts as a new holder', async () => {
+  const { buyMessage } = await import('../src/alerts.js');
+  const ev = { buyer: BUYER, tx: '0x1', amount: 921_000n * E18, quote: { token: WETH, value: E18 } };
+  const html = buyMessage({ ev, symbol: 'LOCKRA', decimals: 18, quoteSymbol: 'WETH', quoteDecimals: 18, links: { explorer: 'https://x' }, before: 1_820n * E18 });
+  assert.match(html, /New holder/);
+});
