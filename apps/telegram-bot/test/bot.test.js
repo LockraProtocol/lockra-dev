@@ -187,3 +187,9 @@ test('stickers: custom emoji stickers return their id, normal stickers get a hin
   await bot.handleUpdate(dm(undefined, { sticker: { file_id: 'f' } }));
   assert.match(last().params.text, /not a custom emoji/);
 });
+
+test('/info is left to other bots in the group', async () => {
+  const { bot, calls } = setup();
+  await bot.handleUpdate(group('/info'));
+  assert.equal(calls.length, 0);
+});
