@@ -2,7 +2,7 @@
 // Ticket rules match lockra.buzz/raffle: one ticket per full `ticketSize` in a single burn,
 // burns inside the campaign window only, at most `maxPerWallet` tickets per wallet.
 
-import { formatUnits, formatUsd, DEAD } from './alerts.js';
+import { formatUnits, formatUsd, DEAD, TRANSFER } from './alerts.js';
 
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
@@ -47,20 +47,44 @@ export function createInfo(o) {
   const decimals = o.decimals ?? 18;
   let cache = { at: 0, v: null };
 
+  const hex = (n) => '0x' + n.toString(16);
+  const blockTime = new Map();
+  async function timeOf(n) {
+    if (!blockTime.has(n)) blockTime.set(n, Number(BigInt((await o.rpc('eth_getBlockByNumber', [hex(n), false])).timestamp)));
+    return blockTime.get(n);
+  }
+  let startBlock = null;
+  /** First block at or after `ts`, by binary search. */
+  async function blockAt(ts, latest) {
+    let lo = 0;
+    let hi = latest;
+    while (lo < hi) {
+      const mid = Math.floor((lo + hi) / 2);
+      if ((await timeOf(mid)) < ts) lo = mid + 1; else hi = mid;
+    }
+    return lo;
+  }
+  /** eth_getLogs over a range, splitting it when the node refuses a range that is too large. */
+  async function logs(filter, from, to) {
+    try {
+      return await o.rpc('eth_getLogs', [{ ...filter, fromBlock: hex(from), toBlock: hex(to) }]);
+    } catch (e) {
+      if (to <= from) throw e;
+      const mid = Math.floor((from + to) / 2);
+      return [...(await logs(filter, from, mid)), ...(await logs(filter, mid + 1, to))];
+    }
+  }
+
+  // Burns are read straight from the chain over RPC (explorers often block server requests).
   async function burnsSince(start) {
+    const latest = Number(BigInt(await o.rpc('eth_blockNumber', [])));
+    if (startBlock == null) startBlock = await blockAt(start, latest);
+    const filter = { address: o.token, topics: [TRANSFER, null, '0x' + DEAD.slice(2).padStart(64, '0')] };
+    const found = await logs(filter, startBlock, latest);
     const out = [];
-    let params = new URLSearchParams({ type: 'ERC-20', filter: 'to', token: o.token });
-    for (let page = 0; page < 50; page++) {
-      const r = await doFetch(`${o.explorer}/api/v2/addresses/${DEAD}/token-transfers?${params}`, { signal: AbortSignal.timeout(15_000) });
-      if (!r.ok) throw new Error(`explorer ${r.status}`);
-      const j = await r.json();
-      let older = false;
-      for (const it of j.items || []) {
-        if (Date.parse(it.timestamp) / 1000 < start) older = true;
-        out.push({ from: it.from?.hash, to: it.to?.hash, value: it.total?.value ?? '0', timestamp: it.timestamp, token: it.token?.address_hash ?? it.token?.address, block: it.block_number, logIndex: it.log_index });
-      }
-      if (!j.next_page_params || older) break;
-      params = new URLSearchParams({ type: 'ERC-20', filter: 'to', token: o.token, ...Object.fromEntries(Object.entries(j.next_page_params).map(([k, v]) => [k, String(v)])) });
+    for (const l of found) {
+      const block = Number(BigInt(l.blockNumber));
+      out.push({ from: '0x' + l.topics[1].slice(-40), to: DEAD, value: BigInt(l.data).toString(), timestamp: new Date((await timeOf(block)) * 1000).toISOString(), token: o.token, block, logIndex: Number(BigInt(l.logIndex)) });
     }
     return out;
   }
@@ -85,21 +109,31 @@ export function createInfo(o) {
     return lines;
   }
 
+  const getJson = (url) => doFetch(url, { headers: { accept: 'application/json', 'user-agent': 'Mozilla/5.0 (compatible; LockraBot/1.0; +https://lockra.buzz)' }, signal: AbortSignal.timeout(15_000) })
+    .then((r) => { if (!r.ok) throw new Error(`${new URL(url).host} ${r.status}`); return r.json(); });
+
   async function stats() {
-    const [tok, deadBal] = await Promise.all([
-      doFetch(`${o.explorer}/api/v2/tokens/${o.token}`, { signal: AbortSignal.timeout(15_000) }).then((r) => r.json()).catch(() => ({})),
-      o.rpc('eth_call', [{ to: o.token, data: '0x70a08231' + DEAD.slice(2).padStart(64, '0') }, 'latest']).then((h) => BigInt(h)).catch(() => null),
+    const call = (data) => o.rpc('eth_call', [{ to: o.token, data }, 'latest']).then((h) => BigInt(h));
+    const [supply, deadBal, dex, tok] = await Promise.all([
+      call('0x18160ddd').catch(() => null),
+      call('0x70a08231' + DEAD.slice(2).padStart(64, '0')).catch(() => null),
+      getJson(`https://api.dexscreener.com/latest/dex/tokens/${o.token}`).catch((e) => { o.log?.(`stats dexscreener: ${e.message}`); return null; }),
+      getJson(`${o.explorer}/api/v2/tokens/${o.token}`).catch((e) => { o.log?.(`stats explorer: ${e.message}`); return null; }),
     ]);
-    const supply = tok.total_supply ? BigInt(tok.total_supply) : null;
-    const price = Number(tok.exchange_rate) || o.lastPrice?.() || null;
+    const pair = (dex?.pairs || []).sort((a, b) => (b.liquidity?.usd || 0) - (a.liquidity?.usd || 0))[0];
+    const price = Number(pair?.priceUsd) || Number(tok?.exchange_rate) || o.lastPrice?.() || null;
     const circ = supply != null && deadBal != null ? supply - deadBal : supply;
-    const mc = price && circ != null ? price * (Number(circ) / 10 ** decimals) : null;
+    const mc = Number(pair?.marketCap) || (price && circ != null ? price * (Number(circ) / 10 ** decimals) : null);
+    const holders = tok?.holders_count ?? tok?.holders;
+    const ch = pair?.priceChange?.h24;
     return [
       '📊 <b>$LOCKRA stats</b>',
       '',
-      price ? `💵 Price: $${price < 0.01 ? price.toPrecision(3) : price.toFixed(4)}` : null,
+      price ? `💵 Price: $${price < 0.01 ? price.toPrecision(3) : price.toFixed(4)}${ch != null ? ` (${ch > 0 ? '+' : ''}${ch}% 24h)` : ''}` : null,
       mc ? `📈 Market cap: ${formatUsd(mc)}` : null,
-      tok.holders_count ?? tok.holders ? `👥 Holders: ${Number(tok.holders_count ?? tok.holders).toLocaleString('en')}` : null,
+      pair?.liquidity?.usd ? `💧 Liquidity: ${formatUsd(pair.liquidity.usd)}` : null,
+      pair?.volume?.h24 ? `🔁 Volume 24h: ${formatUsd(pair.volume.h24)}` : null,
+      holders ? `👥 Holders: ${Number(holders).toLocaleString('en')}` : null,
       deadBal != null ? `🔥 Burned forever: ${formatUnits(deadBal, decimals)} $LOCKRA${supply ? ` (${((Number(deadBal) / Number(supply)) * 100).toFixed(2)}%)` : ''}` : null,
       supply != null ? `🪙 Supply: ${formatUnits(supply, decimals)}` : null,
     ].filter((l) => l != null).join('\n');
