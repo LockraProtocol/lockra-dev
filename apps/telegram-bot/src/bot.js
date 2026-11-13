@@ -194,7 +194,6 @@ export function createBot({ call, username, sdkOptions = {}, now = Date.now, log
         case 'start':
           return await onStart(msg, cmd.args);
         case 'help':
-        case 'info':
           return await reply(msg, HELP);
         case 'seal':
           return await onSeal(msg, cmd.args);
