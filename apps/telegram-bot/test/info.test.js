@@ -32,35 +32,57 @@ describe('countTickets', () => {
   });
 });
 
-function explorerFetch(items, token = {}) {
-  return async (url) => ({
-    ok: true,
-    json: async () => (url.includes('/token-transfers') ? { items: items.map((x) => ({ from: { hash: x.from }, to: { hash: x.to }, token: { address_hash: x.token }, total: { value: x.value }, timestamp: x.timestamp, block_number: x.block, log_index: 0 })), next_page_params: null } : token),
-  });
+// A fake chain: block n has timestamp T0 + n seconds.
+const T0 = start - 1000;
+const pad = (a) => '0x' + a.slice(2).padStart(64, '0');
+function chain(burns, { latest = 400_000, maxRange = 50_000 } = {}) {
+  const calls = { getLogs: 0 };
+  const rpc = async (method, params) => {
+    if (method === 'eth_blockNumber') return '0x' + latest.toString(16);
+    if (method === 'eth_getBlockByNumber') return { timestamp: '0x' + (T0 + parseInt(params[0], 16)).toString(16) };
+    if (method === 'eth_getLogs') {
+      calls.getLogs++;
+      const f = parseInt(params[0].fromBlock, 16); const t = parseInt(params[0].toBlock, 16);
+      if (t - f > maxRange) throw new Error('block range too large');
+      return burns.filter((b) => b.block >= f && b.block <= t).map((b, i) => ({ blockNumber: '0x' + b.block.toString(16), logIndex: '0x' + i.toString(16), topics: ['0xddf2', pad(b.from), pad(DEAD.toLowerCase())], data: '0x' + (BigInt(b.tokens) * E18).toString(16) }));
+    }
+    if (method === 'eth_call') return params[0].data === '0x18160ddd' ? '0x' + (1_000_000_000n * E18).toString(16) : '0x' + (10_000_000n * E18).toString(16);
+    throw new Error(method);
+  };
+  return { rpc, calls };
 }
 
 describe('createInfo', () => {
-  test('raffle shows tickets, burned and countdown', async () => {
-    const info = createInfo({ explorer: 'https://x', rpc: async () => '0x0', token: TOKEN, raffle, now: () => end - 3600, fetch: explorerFetch([burn('0xa', 100_000, '2026-11-13T14:00:00Z', 1), burn('0xb', 50_000, '2026-11-13T14:10:00Z', 2)]) });
+  test('raffle reads burns from the chain, splitting large log ranges', async () => {
+    const at = (iso) => Date.parse(iso) / 1000 - T0; // block for a time
+    const c = chain([
+      { from: '0x00000000000000000000000000000000000000aa', tokens: 100_000, block: at('2026-11-13T14:00:00Z') },
+      { from: '0x00000000000000000000000000000000000000bb', tokens: 50_000, block: at('2026-11-14T10:00:00Z') },
+      { from: '0x00000000000000000000000000000000000000cc', tokens: 50_000, block: 10 }, // before the start
+    ]);
+    const info = createInfo({ explorer: 'https://x', rpc: c.rpc, token: TOKEN, raffle, now: () => end - 3600 });
     const text = await info.raffle();
     assert.match(text, /Tickets: <b>3<\/b> from 2 wallets/);
     assert.match(text, /Burned: 150,000 \$LOCKRA/);
     assert.match(text, /Closes in <b>1h 0m<\/b>/);
     assert.match(text, /\$500 jackpot by FOBO/);
+    assert.ok(c.calls.getLogs > 1, 'range was split');
   });
 
-  test('stats shows holders, burned share and market cap', async () => {
-    const supply = 1_000_000_000n * E18;
-    const info = createInfo({
-      explorer: 'https://x', token: TOKEN, raffle,
-      rpc: async () => '0x' + (10_000_000n * E18).toString(16),
-      fetch: explorerFetch([], { total_supply: supply.toString(), holders_count: '1234', exchange_rate: '0.002' }),
+  test('stats uses DexScreener for price and the chain for supply and burns', async () => {
+    const c = chain([]);
+    const fetch = async (url) => ({
+      ok: !url.includes('blockscout'),
+      status: 403,
+      json: async () => ({ pairs: [{ priceUsd: '0.002', marketCap: 1_980_000, liquidity: { usd: 50_000 }, volume: { h24: 12_345 }, priceChange: { h24: 12.5 } }] }),
     });
+    const info = createInfo({ explorer: 'https://robinhoodchain.blockscout.com', token: TOKEN, raffle, rpc: c.rpc, fetch });
     const text = await info.stats();
-    assert.match(text, /Holders: 1,234/);
+    assert.match(text, /Price: \$0\.00200 \(\+12\.5% 24h\)/);
+    assert.match(text, /Market cap: \$1\.98M/);
+    assert.match(text, /Liquidity: \$50,000/);
     assert.match(text, /Burned forever: 10,000,000 \$LOCKRA \(1\.00%\)/);
-    assert.match(text, /Market cap: \$1\.98M/); // 0.002 * 990M
-    assert.match(text, /Price: \$0\.00200/);
+    assert.doesNotMatch(text, /Holders/);
   });
 });
 
