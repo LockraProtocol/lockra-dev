@@ -1,0 +1,152 @@
+import { test, describe } from 'node:test';
+import assert from 'node:assert/strict';
+import { classify, decodeTransfer, decodeString, buyMessage, burnMessage, formatUnits, createAlerts, TRANSFER, DEAD } from '../src/alerts.js';
+
+const TOKEN = '0x2fc6de9c65a620f918ca7d1191d3afa495ca2898';
+const WETH = '0x4200000000000000000000000000000000000006';
+const POOL = '0x1111111111111111111111111111111111111111';
+const ROUTER = '0x2222222222222222222222222222222222222222';
+const BUYER = '0x3333333333333333333333333333333333333333';
+const pad = (a) => '0x' + a.slice(2).padStart(64, '0');
+const E18 = 10n ** 18n;
+let li = 0;
+const tr = (token, from, to, value, tx = '0xaa') => ({ address: token, topics: [TRANSFER, pad(from), pad(to)], data: '0x' + value.toString(16).padStart(64, '0'), transactionHash: tx, logIndex: '0x' + (li++).toString(16) });
+
+describe('classify', () => {
+  test('a swap where the pool receives WETH and sends LOCKRA is a buy', () => {
+    const logs = [tr(WETH, ROUTER, POOL, E18 / 20n), tr(TOKEN, POOL, BUYER, 120_000n * E18)];
+    const [ev] = classify(logs, { token: TOKEN });
+    assert.equal(ev.type, 'buy');
+    assert.equal(ev.buyer, BUYER);
+    assert.equal(ev.pool, POOL);
+    assert.equal(ev.amount, 120_000n * E18);
+    assert.deepEqual(ev.quote, { token: WETH, value: E18 / 20n });
+  });
+
+  test('a sell is not a buy (the seller is a wallet, not a contract)', () => {
+    const logs = [tr(TOKEN, BUYER, POOL, 1000n * E18), tr(WETH, POOL, BUYER, E18 / 100n)];
+    assert.deepEqual(classify(logs, { token: TOKEN, contracts: new Set([POOL, ROUTER]) }), []);
+  });
+
+  test('a plain wallet-to-wallet transfer is ignored', () => {
+    assert.deepEqual(classify([tr(TOKEN, ROUTER, BUYER, 5n * E18)], { token: TOKEN }), []);
+  });
+
+  test('a pool to router to buyer route reports only the final buyer', () => {
+    const logs = [tr(WETH, BUYER, POOL, E18), tr(TOKEN, POOL, ROUTER, 10n * E18), tr(TOKEN, ROUTER, BUYER, 10n * E18)];
+    const evs = classify(logs, { token: TOKEN, contracts: new Set([POOL, ROUTER]) });
+    assert.equal(evs.length, 1);
+    assert.equal(evs[0].buyer, BUYER);
+  });
+
+  test('transfers to the dead address are burns', () => {
+    const [ev] = classify([tr(TOKEN, BUYER, DEAD, 50_000n * E18)], { token: TOKEN });
+    assert.equal(ev.type, 'burn');
+    assert.equal(ev.from, BUYER);
+  });
+
+  test('with trusted pools, only those pools count', () => {
+    const logs = [tr(WETH, ROUTER, POOL, E18), tr(TOKEN, POOL, BUYER, 10n * E18)];
+    assert.equal(classify(logs, { token: TOKEN, pools: [ROUTER] }).length, 0);
+    assert.equal(classify(logs, { token: TOKEN, pools: [POOL.toUpperCase().replace('0X', '0x')] }).length, 1);
+  });
+
+  test('ignores non-Transfer logs', () => {
+    assert.equal(decodeTransfer({ address: TOKEN, topics: ['0x1234'], data: '0x' }), null);
+  });
+});
+
+describe('messages', () => {
+  const links = { explorer: 'https://robinhoodchain.blockscout.com' };
+  test('buy message shows paid, received, buyer, tx and market cap', () => {
+    const ev = { type: 'buy', buyer: BUYER, tx: '0xabc', amount: 100_000n * E18, quote: { token: WETH, value: E18 / 10n } };
+    const html = buyMessage({ ev, symbol: 'LOCKRA', decimals: 18, quoteSymbol: 'WETH', quoteDecimals: 18, quoteUsd: 3000, supply: 1_000_000_000n * E18, links });
+    assert.match(html, /<b>\$LOCKRA Buy!<\/b>/);
+    assert.match(html, /💰 0\.1 WETH \(\$300\.00\)/);
+    assert.match(html, /🔒 100,000 \$LOCKRA/);
+    assert.match(html, /tx\/0xabc/);
+    assert.match(html, /Market cap \$3\.00M/); // 300 / 100k * 1B
+    assert.equal((html.match(/🟢/g) || []).length, 30);
+  });
+
+  test('burn message counts raffle tickets', () => {
+    const html = burnMessage({ ev: { from: BUYER, tx: '0xdef', amount: 150_000n * E18 }, symbol: 'LOCKRA', decimals: 18, links, ticketSize: 50_000n * E18 });
+    assert.match(html, /150,000 \$LOCKRA gone forever/);
+    assert.match(html, /🎟 3 raffle tickets/);
+  });
+
+  test('formatUnits', () => {
+    assert.equal(formatUnits(1_234_567n * E18, 18), '1,234,567');
+    assert.equal(formatUnits(E18 / 20n, 18), '0.05');
+    assert.equal(formatUnits(12n * E18 + E18 / 2n, 18), '12.5');
+  });
+
+  test('decodeString handles ABI strings and bytes32', () => {
+    const abi = '0x' + '20'.padStart(64, '0') + '6'.padStart(64, '0') + Buffer.from('LOCKRA').toString('hex').padEnd(64, '0');
+    assert.equal(decodeString(abi), 'LOCKRA');
+    assert.equal(decodeString('0x' + Buffer.from('WETH').toString('hex').padEnd(64, '0')), 'WETH');
+  });
+});
+
+describe('createAlerts', () => {
+  function chain() {
+    let head = 100;
+    const logs = [];
+    const receipts = {};
+    const str = (s) => '0x' + '20'.padStart(64, '0') + s.length.toString(16).padStart(64, '0') + Buffer.from(s).toString('hex').padEnd(64, '0');
+    const rpc = async (method, params) => {
+      if (method === 'eth_blockNumber') return '0x' + head.toString(16);
+      if (method === 'eth_getLogs') { const f = parseInt(params[0].fromBlock, 16); const t = parseInt(params[0].toBlock, 16); return logs.filter((l) => l.block >= f && l.block <= t); }
+      if (method === 'eth_getTransactionReceipt') return receipts[params[0]];
+      if (method === 'eth_getCode') return [POOL, ROUTER].includes(params[0]) ? '0x6080' : '0x';
+      if (method === 'eth_call') {
+        const { to, data } = params[0];
+        if (data === '0x313ce567') return '0x' + (18).toString(16).padStart(64, '0');
+        if (data === '0x95d89b41') return str(to === WETH ? 'WETH' : 'LOCKRA');
+        if (data === '0x18160ddd') return '0x' + (1_000_000_000n * E18).toString(16);
+      }
+      throw new Error('unexpected ' + method);
+    };
+    return {
+      rpc,
+      mine(txLogs, hash) { head += 1; txLogs.forEach((l) => { l.block = head; l.transactionHash = hash; logs.push(l); }); receipts[hash] = { status: '0x1', logs: txLogs }; },
+    };
+  }
+
+  test('posts one alert per buy, starting from the current block', async () => {
+    const c = chain();
+    const sent = [];
+    const alerts = createAlerts({ rpc: c.rpc, send: async (chat, html) => sent.push({ chat, html }), chats: ['-100'], token: TOKEN, explorer: 'https://x', ethUsd: async () => 3000, burns: true, ticketSize: 50_000n * E18 });
+    c.mine([tr(WETH, ROUTER, POOL, E18), tr(TOKEN, POOL, BUYER, E18)], '0xold');
+    await alerts.tick(); // first tick only sets the starting block
+    assert.equal(sent.length, 0);
+    c.mine([tr(WETH, ROUTER, POOL, E18 / 10n), tr(TOKEN, POOL, BUYER, 100_000n * E18)], '0xbuy');
+    c.mine([tr(TOKEN, BUYER, DEAD, 50_000n * E18)], '0xburn');
+    await alerts.tick();
+    await alerts.tick();
+    assert.equal(sent.length, 2);
+    assert.match(sent[0].html, /Buy!.*\n.*\n\n💰 0\.1 WETH \(\$300\.00\)/s);
+    assert.match(sent[1].html, /Burn!/);
+    assert.match(sent[1].html, /🎟 1 raffle ticket\n/);
+  });
+
+  test('does not post sells', async () => {
+    const c = chain();
+    const sent = [];
+    const alerts = createAlerts({ rpc: c.rpc, send: async (chat, html) => sent.push(html), chats: ['-1'], token: TOKEN, explorer: 'https://x', ethUsd: async () => 3000 });
+    await alerts.tick();
+    c.mine([tr(TOKEN, BUYER, POOL, 1000n * E18), tr(WETH, POOL, BUYER, E18 / 100n)], '0xsell');
+    await alerts.tick();
+    assert.equal(sent.length, 0);
+  });
+
+  test('respects the minimum buy in USD', async () => {
+    const c = chain();
+    const sent = [];
+    const alerts = createAlerts({ rpc: c.rpc, send: async (chat, html) => sent.push(html), chats: ['-1'], token: TOKEN, explorer: 'https://x', ethUsd: async () => 3000, minUsd: 50 });
+    await alerts.tick();
+    c.mine([tr(WETH, ROUTER, POOL, E18 / 1000n), tr(TOKEN, POOL, BUYER, 100n * E18)], '0xsmall');
+    await alerts.tick();
+    assert.equal(sent.length, 0);
+  });
+});

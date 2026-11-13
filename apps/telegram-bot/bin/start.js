@@ -3,6 +3,7 @@
 
 import { createTelegram } from '../src/telegram.js';
 import { createBot, COMMANDS } from '../src/bot.js';
+import { createAlerts, createRpc, createEthPrice } from '../src/alerts.js';
 
 const log = (msg) => console.log(`[lockra-bot] ${new Date().toISOString()} ${msg}`);
 
@@ -24,6 +25,42 @@ for (const sig of ['SIGINT', 'SIGTERM']) {
     log(`${sig} received, finishing in-flight updates…`);
     controller.abort();
   });
+}
+
+const chats = (process.env.ALERT_CHAT_IDS || '').split(',').map((s) => s.trim()).filter(Boolean);
+if (chats.length) {
+  const explorer = process.env.EXPLORER_URL || 'https://robinhoodchain.blockscout.com';
+  const token = process.env.TOKEN_ADDRESS || '0x2fc6de9c65a620f918ca7d1191d3afa495ca2898';
+  const buttons = [
+    process.env.BUY_URL && { text: '🛒 Buy', url: process.env.BUY_URL },
+    process.env.CHART_URL && { text: '📈 Chart', url: process.env.CHART_URL },
+    { text: '🎟 Raffle', url: process.env.RAFFLE_URL || 'https://lockra.buzz/raffle' },
+  ].filter(Boolean);
+  const media = process.env.ALERT_MEDIA; // optional GIF/video URL or Telegram file_id
+  const send = (chat_id, html, btns) => {
+    const reply_markup = btns.length ? { inline_keyboard: [btns] } : undefined;
+    return media
+      ? telegram.call('sendAnimation', { chat_id, animation: media, caption: html, parse_mode: 'HTML', reply_markup })
+      : telegram.call('sendMessage', { chat_id, text: html, parse_mode: 'HTML', link_preview_options: { is_disabled: true }, reply_markup });
+  };
+  const alerts = createAlerts({
+    rpc: createRpc(process.env.RPC_URL || 'https://rpc.mainnet.chain.robinhood.com'),
+    send,
+    chats,
+    token,
+    pools: (process.env.POOL_ADDRESSES || '').split(',').map((s) => s.trim()).filter(Boolean),
+    explorer,
+    ethUsd: createEthPrice(explorer),
+    minUsd: Number(process.env.ALERT_MIN_USD || 0),
+    step: Number(process.env.ALERT_STEP_USD || 10),
+    emoji: process.env.ALERT_EMOJI || '🟢',
+    burns: process.env.ALERT_BURNS !== 'false',
+    ticketSize: BigInt(process.env.RAFFLE_TICKET || '50000') * 10n ** 18n,
+    buttons,
+    log,
+  });
+  alerts.run({ signal: controller.signal }).catch((e) => log(`alerts stopped: ${e.message}`));
+  log(`buy alerts on for ${chats.length} chat(s)`);
 }
 
 log(`@${me.username} is running`);
