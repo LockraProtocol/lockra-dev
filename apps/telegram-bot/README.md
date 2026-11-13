@@ -69,7 +69,7 @@ Turn it on:
 | `ALERT_MIN_USD` | No | Skip buys smaller than this many dollars. Default `0`. |
 | `ALERT_STEP_USD` | No | One emoji per this many dollars, up to 30. Default `10`. |
 | `ALERT_EMOJI` | No | Emoji used for the buy strength line. Default `🟢`. |
-| `ALERT_MEDIA` | No | GIF or video (URL or Telegram file_id) sent with each alert. |
+| `ALERT_MEDIA` | No | GIF or video sent with each alert. Send it to the bot in a private chat and it replies with the exact value to use (`video:…` or `animation:…`). A direct URL also works. |
 | `ALERT_BURNS` | No | Set to `false` to skip burn alerts. |
 | `BUY_URL`, `CHART_URL` | No | Links for the Buy and Chart buttons under each alert. |
 | `RAFFLE_URL`, `RAFFLE_TICKET` | No | Raffle link and tokens per ticket. Defaults: lockra.buzz/raffle, `50000`. |

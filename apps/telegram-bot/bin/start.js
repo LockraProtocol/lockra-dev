@@ -36,11 +36,13 @@ if (chats.length) {
     process.env.CHART_URL && { text: '📈 Chart', url: process.env.CHART_URL },
     { text: '🎟 Raffle', url: process.env.RAFFLE_URL || 'https://lockra.buzz/raffle' },
   ].filter(Boolean);
-  const media = process.env.ALERT_MEDIA; // optional GIF/video URL or Telegram file_id
+  // Optional GIF or video: "video:<file_id>" or "animation:<file_id>" (send it to the bot in a DM to get this),
+  // or a plain URL / file_id, sent as an animation.
+  const [, mediaKind = 'animation', media] = /^(?:(video|animation):)?(.+)$/.exec(process.env.ALERT_MEDIA || '') || [];
   const send = (chat_id, html, btns) => {
     const reply_markup = btns.length ? { inline_keyboard: [btns] } : undefined;
     return media
-      ? telegram.call('sendAnimation', { chat_id, animation: media, caption: html, parse_mode: 'HTML', reply_markup })
+      ? telegram.call(mediaKind === 'video' ? 'sendVideo' : 'sendAnimation', { chat_id, [mediaKind]: media, caption: html, parse_mode: 'HTML', reply_markup })
       : telegram.call('sendMessage', { chat_id, text: html, parse_mode: 'HTML', link_preview_options: { is_disabled: true }, reply_markup });
   };
   const alerts = createAlerts({
