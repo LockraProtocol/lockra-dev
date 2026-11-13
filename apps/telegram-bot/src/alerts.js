@@ -7,6 +7,8 @@
 export const TRANSFER = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef';
 export const DEAD = '0x000000000000000000000000000000000000dead';
 const ZERO = '0x0000000000000000000000000000000000000000';
+/** Marks a buy paid in the chain's native ETH. */
+export const NATIVE = 'native';
 /** Dollar stablecoins, valued 1:1 (USDG is common on Robinhood Chain). */
 export const STABLE = /^(USDG|USDC(\.E)?|USDT0?|USD₮0?|DAI|USDS|USDE|PYUSD|FDUSD)$/i;
 
@@ -73,6 +75,12 @@ export function classify(logs, { token, pools = [], contracts = null, signer = n
     if (delta < 0n) return events.filter((e) => e.type !== 'buy');
   }
   return events;
+}
+
+/** Net change of `token` for `who` across a transaction's logs. */
+export function netChange(logs, token, who) {
+  const t = token.toLowerCase();
+  return logs.map(decodeTransfer).filter((x) => x && x.token === t).reduce((d, x) => d + (x.to === who ? x.value : 0n) - (x.from === who ? x.value : 0n), 0n);
 }
 
 /** One circle per `step` of USD (or of quote units when there is no price), 1 to 30. */
@@ -146,6 +154,7 @@ export function createAlerts(o) {
 
   const call = (to, data) => o.rpc('eth_call', [{ to, data }, 'latest']);
   async function tokenMeta(addr) {
+    if (addr === NATIVE) return { symbol: 'ETH', decimals: 18 };
     if (meta.has(addr)) return meta.get(addr);
     let symbol = '?'; let decimals = 18;
     try { decimals = Number(BigInt(await call(addr, '0x313ce567'))); } catch { }
@@ -168,6 +177,18 @@ export function createAlerts(o) {
       for (const a of senders) if (codeCache.get(a)) contracts.add(a);
     }
     const events = classify(receipt.logs, { token: o.token, pools: o.pools, contracts, signer: receipt.from });
+    // Buys paid in native ETH (Uniswap v4-style pools, launchpad markets) move no ERC-20 to the pool,
+    // so their shape is not visible in the logs. The signer gaining tokens while sending ETH is a buy.
+    if (!events.some((e) => e.type === 'buy') && receipt.from) {
+      const me = receipt.from.toLowerCase();
+      const gained = netChange(receipt.logs, t, me);
+      const fromContract = receipt.logs.map(decodeTransfer).some((x) => x && x.token === t && x.to === me && contracts?.has(x.from));
+      if (gained > 0n && (fromContract || o.pools?.length)) {
+        const tx = await o.rpc('eth_getTransactionByHash', [hash]);
+        const value = tx?.value ? BigInt(tx.value) : 0n;
+        if (value > 0n) events.push({ type: 'buy', buyer: me, pool: null, amount: gained, tx: hash, quote: { token: NATIVE, value } });
+      }
+    }
     if (!events.length) return;
     const { symbol, decimals } = await tokenMeta(o.token.toLowerCase());
     if (supply == null) supply = BigInt(await call(o.token, '0x18160ddd'));

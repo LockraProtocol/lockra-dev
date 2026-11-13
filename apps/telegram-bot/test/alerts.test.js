@@ -263,3 +263,36 @@ test('a buy whose receipt fails is retried on the next tick, not lost', async ()
   await alerts.tick();
   assert.equal(sent.length, 1);
 });
+
+test('a buy paid in native ETH (no ERC-20 into the pool) is posted', async () => {
+  const PM = '0x6666666666666666666666666666666666666666'; // v4-style pool manager
+  let head = 1; const logs = []; const receipts = {}; const txs = {};
+  const rpc = async (m, p) => {
+    if (m === 'eth_blockNumber') return '0x' + head.toString(16);
+    if (m === 'eth_getLogs') return logs.filter((l) => l.block >= parseInt(p[0].fromBlock, 16) && l.block <= parseInt(p[0].toBlock, 16));
+    if (m === 'eth_getTransactionReceipt') return receipts[p[0]];
+    if (m === 'eth_getTransactionByHash') return txs[p[0]];
+    if (m === 'eth_getCode') return p[0] === PM ? '0x60' : '0x';
+    if (m === 'eth_call') return p[0].data === '0x313ce567' ? '0x12' : p[0].data === '0x18160ddd' ? '0x' + (10n ** 27n).toString(16) : '0x0';
+  };
+  const sent = [];
+  const alerts = createAlerts({ rpc, send: async (c, html) => sent.push(html), chats: ['-1'], token: TOKEN, explorer: 'https://x', ethUsd: async () => 2000, minUsd: 50 });
+  await alerts.tick();
+  head++;
+  const l = tr(TOKEN, PM, BUYER, 1_770_000n * E18); l.block = head; l.blockNumber = '0x' + head.toString(16); l.transactionHash = '0xv4'; logs.push(l);
+  receipts['0xv4'] = { status: '0x1', from: BUYER, logs: [l] };
+  txs['0xv4'] = { value: '0x' + (122n * 10n ** 15n).toString(16) }; // 0.122 ETH = $244
+  await alerts.tick();
+  assert.equal(sent.length, 1);
+  assert.match(sent[0], /↗ 0\.122 ETH \(\$244\.00\)/);
+  assert.match(sent[0], /↙ 1\.77M \$/);
+  assert.match(sent[0], /0x3333…3333/);
+});
+
+test('a native ETH sell is not posted', async () => {
+  const { classify, netChange } = await import('../src/alerts.js');
+  const PM = '0x6666666666666666666666666666666666666666';
+  const logs = [tr(TOKEN, BUYER, PM, 1000n * E18)];
+  assert.ok(netChange(logs, TOKEN, BUYER) < 0n);
+  assert.equal(classify(logs, { token: TOKEN, contracts: new Set([PM]), signer: BUYER }).length, 0);
+});
