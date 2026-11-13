@@ -177,6 +177,12 @@ export function createBot({ call, username, sdkOptions = {}, now = Date.now, log
   async function handleUpdate(update) {
     const msg = update.message;
     if (msg && msg.chat.type === 'private' && (msg.animation || msg.video)) return await onMedia(msg).catch((e) => log(`media failed: ${e?.message ?? e}`));
+    if (msg?.chat.type === 'private' && msg.sticker) {
+      const id = msg.sticker.custom_emoji_id;
+      return await reply(msg, id
+        ? `😀 <b>Custom emoji for buy alerts</b>\n\nSet this as <code>ALERT_EMOJI_ID</code> on your host:\n<code>${esc(id)}</code>`
+        : 'That is a sticker, not a custom emoji. Stickers cannot go inside the alert text.\n\nSend the animated emoji typed in a message (from the emoji tab of the keyboard, not the sticker tab), or send a GIF or video to use as the alert media.').catch((e) => log(`sticker failed: ${e?.message ?? e}`));
+    }
     const custom = msg?.chat.type === 'private' && (msg.entities || []).filter((e) => e.type === 'custom_emoji');
     if (custom?.length) return await reply(msg, ['😀 <b>Custom emoji for buy alerts</b>', '', 'Set this as <code>ALERT_EMOJI_ID</code> on your host:', ...[...new Set(custom.map((e) => e.custom_emoji_id))].map((id) => `<code>${esc(id)}</code>`)].join('\n')).catch((e) => log(`emoji failed: ${e?.message ?? e}`));
     const text = msg?.text;
