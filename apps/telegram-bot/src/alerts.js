@@ -78,22 +78,37 @@ export function classify(logs, { token, pools = [], contracts = null, signer = n
 /** One circle per `step` of USD (or of quote units when there is no price), 1 to 30. */
 export const strength = (value, step) => Math.max(1, Math.min(30, Math.floor(value / step) || 1));
 
+/** 99812.4 → "99.8K", 2_530_000 → "2.53M". */
+export function formatCompact(n) {
+  const a = Math.abs(n);
+  const f = (v, u) => `${v >= 100 ? v.toFixed(0) : v >= 10 ? v.toFixed(1) : v.toFixed(2)}`.replace(/\.0+$/, '').replace(/(\.\d*[1-9])0+$/, '$1') + u;
+  if (a >= 1e9) return f(n / 1e9, 'B');
+  if (a >= 1e6) return f(n / 1e6, 'M');
+  if (a >= 1e3) return f(n / 1e3, 'K');
+  return n >= 1 ? n.toLocaleString('en', { maximumFractionDigits: 2 }) : n.toPrecision(3);
+}
+
 /**
  * Build the alert text (HTML) for a buy.
+ * `before` is the buyer's token balance before this buy (units), when known.
  */
-export function buyMessage({ ev, symbol, decimals, quoteSymbol, quoteDecimals, quoteUsd, supply, links, emoji = '🟢', step = 10 }) {
+export function buyMessage({ ev, symbol, decimals, quoteSymbol, quoteDecimals, quoteUsd, supply, links, emoji = '🟢', step = 10, before = null }) {
   const got = Number(ev.amount) / 10 ** decimals;
   const paid = ev.quote ? Number(ev.quote.value) / 10 ** quoteDecimals : null;
   const usd = paid != null && quoteUsd ? paid * quoteUsd : null;
   const mc = usd && got && supply ? (usd / got) * (Number(supply) / 10 ** decimals) : null;
+  const position = before == null ? null : before === 0n ? '🆕 New holder' : `📈 Position +${formatCompact((Number(ev.amount) / Number(before)) * 100)}%`;
   const lines = [
     `<b>$${esc(symbol)} Buy!</b>`,
     usd != null ? emoji.repeat(strength(usd, step)) : emoji,
     '',
-    paid != null ? `💰 ${formatUnits(ev.quote.value, quoteDecimals)} ${esc(quoteSymbol)}${usd != null ? ` (${formatUsd(usd)})` : ''}` : null,
-    `🔒 ${formatUnits(ev.amount, decimals)} $${esc(symbol)}`,
-    `👤 <a href="${links.explorer}/address/${ev.buyer}">${short(ev.buyer)}</a> · <a href="${links.explorer}/tx/${ev.tx}">TX</a>`,
-    mc ? `📈 Market cap ${formatUsd(mc)}` : null,
+    paid != null ? `↗ ${formatUnits(ev.quote.value, quoteDecimals)} ${esc(quoteSymbol)}${usd != null ? ` (${formatUsd(usd)})` : ''}` : null,
+    `↙ ${formatCompact(got)} $${esc(symbol)}`,
+    '',
+    `👤 <a href="${links.explorer}/address/${ev.buyer}">${short(ev.buyer)}</a>`,
+    position,
+    mc ? '' : null,
+    mc ? `💰 Market cap ${formatUsd(mc)}` : null,
   ];
   return lines.filter((l) => l != null).join('\n');
 }
@@ -105,7 +120,7 @@ export function burnMessage({ ev, symbol, decimals, links, ticketSize }) {
     '',
     `🔥 ${formatUnits(ev.amount, decimals)} $${esc(symbol)} gone forever`,
     tickets > 0n ? `🎟 ${tickets > 5n ? '5 (max)' : tickets} raffle ticket${tickets === 1n ? '' : 's'}` : null,
-    `👤 <a href="${links.explorer}/address/${ev.from}">${short(ev.from)}</a> · <a href="${links.explorer}/tx/${ev.tx}">TX</a>`,
+    `👤 <a href="${links.explorer}/address/${ev.from}">${short(ev.from)}</a>`,
   ].filter((l) => l != null).join('\n');
 }
 
@@ -169,12 +184,16 @@ export function createAlerts(o) {
         if (usd != null && ev.amount > 0n) lastPrice = usd / (Number(ev.amount) / 10 ** decimals);
         // With a minimum set, a buy whose dollar value is unknown is skipped rather than guessed.
         if (o.minUsd && (usd == null || usd < o.minUsd)) continue;
-        html = buyMessage({ ev, symbol, decimals, quoteSymbol: q.symbol, quoteDecimals: q.decimals, quoteUsd, supply: circulating, links: { explorer: o.explorer }, emoji: o.emoji, step: o.step });
+        // Balance right after the buy, read at its block; minus the buy gives the balance before.
+        const after = await o.rpc('eth_call', [{ to: o.token, data: '0x70a08231' + ev.buyer.slice(2).padStart(64, '0') }, receipt.blockNumber || 'latest']).then(BigInt).catch(() => null);
+        const before = after != null && after >= ev.amount ? after - ev.amount : null;
+        html = buyMessage({ ev, symbol, decimals, quoteSymbol: q.symbol, quoteDecimals: q.decimals, quoteUsd, supply: circulating, links: { explorer: o.explorer }, emoji: o.emoji, step: o.step, before });
       } else {
         if (!o.burns) continue;
         html = burnMessage({ ev, symbol, decimals, links: { explorer: o.explorer }, ticketSize: o.ticketSize });
       }
-      for (const chat of o.chats) await o.send(chat, html, o.buttons || [], ev.type).catch((e) => log(`send to ${chat} failed: ${e.message}`));
+      const buttons = typeof o.buttons === 'function' ? o.buttons(ev) : o.buttons || [];
+      for (const chat of o.chats) await o.send(chat, html, buttons, ev.type).catch((e) => log(`send to ${chat} failed: ${e.message}`));
     }
   }
 
