@@ -183,7 +183,12 @@ export function createAlerts(o) {
   async function run({ signal, intervalMs = 4000 } = {}) {
     while (!signal?.aborted) {
       await tick().catch((e) => log(`alerts: ${e.message}`));
-      await new Promise((r) => { const t = setTimeout(r, intervalMs); signal?.addEventListener('abort', () => { clearTimeout(t); r(); }, { once: true }); });
+      await new Promise((resolve) => {
+        // Remove the abort listener on every wake-up, or one would pile up per poll.
+        const done = () => { clearTimeout(t); signal?.removeEventListener('abort', done); resolve(); };
+        const t = setTimeout(done, intervalMs);
+        signal?.addEventListener('abort', done, { once: true });
+      });
     }
   }
 
