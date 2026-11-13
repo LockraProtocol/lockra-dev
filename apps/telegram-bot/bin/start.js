@@ -62,7 +62,10 @@ if (chats.length) {
     ethUsd: createEthPrice(explorer, fetch, tokenAddress),
     minUsd: Number(process.env.ALERT_MIN_USD || 0),
     step: Number(process.env.ALERT_STEP_USD || 10),
-    emoji: process.env.ALERT_EMOJI || '🟢',
+    // A Telegram custom (animated) emoji, if ALERT_EMOJI_ID is set; ALERT_EMOJI is shown where it is not supported.
+    emoji: process.env.ALERT_EMOJI_ID
+      ? `<tg-emoji emoji-id="${process.env.ALERT_EMOJI_ID.replace(/\D/g, '')}">${process.env.ALERT_EMOJI || '🔒'}</tg-emoji>`
+      : process.env.ALERT_EMOJI || '🟢',
     burns: process.env.ALERT_BURNS !== 'false',
     ticketSize: BigInt(process.env.RAFFLE_TICKET || '50000') * 10n ** 18n,
     buttons,
