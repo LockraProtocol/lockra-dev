@@ -157,3 +157,19 @@ describe('other messages', () => {
     assert.match(logs[0], /boom/);
   });
 });
+
+describe('alert media', () => {
+  test('a video sent in a private chat returns the ALERT_MEDIA value', async () => {
+    const { bot, last } = setup();
+    await bot.handleUpdate(dm(undefined, { video: { file_id: 'BAACAgQ_x' } }));
+    assert.match(last().params.text, /<code>video:BAACAgQ_x<\/code>/);
+    await bot.handleUpdate(dm(undefined, { animation: { file_id: 'CgACAg_y' } }));
+    assert.match(last().params.text, /<code>animation:CgACAg_y<\/code>/);
+  });
+
+  test('media in a group is ignored', async () => {
+    const { bot, calls } = setup();
+    await bot.handleUpdate(group(undefined, { video: { file_id: 'x' } }));
+    assert.equal(calls.length, 0);
+  });
+});
