@@ -16,6 +16,8 @@ const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replac
 export const COMMANDS = [
   { command: 'seal', description: 'Seal a message until a date (private chat)' },
   { command: 'open', description: 'Open a capsule or see how long is left' },
+  { command: 'raffle', description: 'Raffle tickets, burns and countdown' },
+  { command: 'stats', description: '$LOCKRA price, holders and burned' },
   { command: 'help', description: 'How LOCKRA works' },
 ];
 
@@ -32,6 +34,8 @@ const HELP = [
   '<b>Open</b> (anywhere):',
   '<code>/open https://lockra.buzz/#c=…</code>',
   'or reply <code>/open</code> to a message that contains a capsule link.',
+  '',
+  '<b>Community</b>: /raffle for tickets and countdown, /stats for price, holders and burns.',
   '',
   '⚠️ Never seal seed phrases, private keys or passwords.',
 ].join('\n');
@@ -59,9 +63,10 @@ const ERRORS = {
  *   sdkOptions?: object,
  *   now?: () => number,
  *   log?: (msg: string) => void,
+ *   info?: { raffle: () => Promise<string>, stats: () => Promise<string> },
  * }} options
  */
-export function createBot({ call, username, sdkOptions = {}, now = Date.now, log = () => {} }) {
+export function createBot({ call, username, sdkOptions = {}, now = Date.now, log = () => {}, info = null }) {
   const seals = new Map(); // userId -> timestamps (ms), in memory only
 
   const reply = (msg, text, extra = {}) =>
@@ -187,6 +192,14 @@ export function createBot({ call, username, sdkOptions = {}, now = Date.now, log
           return await onSeal(msg, cmd.args);
         case 'open':
           return await onOpen(msg, cmd.args);
+        case 'raffle':
+        case 'stats': {
+          if (!info) return;
+          const raffleUrl = info.raffleUrl || 'https://lockra.buzz/raffle';
+          const text = await info[cmd.name]().catch((e) => { log(`/${cmd.name}: ${e.message}`); return null; });
+          if (!text) return await reply(msg, 'Could not load the numbers right now. Please try again in a minute.');
+          return await reply(msg, text, cmd.name === 'raffle' ? { reply_markup: { inline_keyboard: [[{ text: '🔥 Burn to enter', url: raffleUrl }]] } } : {});
+        }
         case 'chatid':
           // Lets an admin find the id to put in ALERT_CHAT_IDS. Not listed in the menu.
           return await reply(msg, `Chat id: <code>${esc(String(msg.chat.id))}</code>`);

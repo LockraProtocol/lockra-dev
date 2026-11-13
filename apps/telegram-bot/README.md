@@ -8,6 +8,8 @@ Seal and open LOCKRA time capsules without leaving Telegram. Built on [lockra-sd
 | `/seal 2027-01-01 your message` | Private chat | Same, with a UTC date (`2027-01-01T18:30` also works). |
 | `/open <link>` | Anywhere | Shows how long is left, or the message once unlocked. |
 | `/open` as a reply | Anywhere | Opens the capsule link in the replied-to message. |
+| `/raffle` | Anywhere | Raffle tickets, wallets, burned amount and countdown, live from the explorer. |
+| `/stats` | Anywhere | $LOCKRA price, market cap, holders and total burned. |
 | `/help` | Anywhere | How LOCKRA works. |
 | `/chatid` | Anywhere | Shows the chat id, for setting up alerts. Not listed in the menu. |
 
@@ -74,6 +76,8 @@ Turn it on:
 | `ALERT_BURNS` | No | Set to `false` to skip burn alerts. |
 | `BUY_URL`, `CHART_URL` | No | Links for the Buy and Chart buttons under each alert. |
 | `RAFFLE_URL`, `RAFFLE_TICKET` | No | Raffle link and tokens per ticket. Defaults: lockra.buzz/raffle, `50000`. |
+| `RAFFLE_START`, `RAFFLE_END` | No | Campaign window (ISO dates, UTC) for `/raffle`. Defaults to the FOBO × LOCKRA raffle. |
+| `RAFFLE_PRIZE`, `RAFFLE_MAX_TICKETS` | No | Prize text and tickets per wallet for `/raffle`. |
 | `POOL_ADDRESSES` | No | Only count buys from these pool addresses, comma separated. |
 | `TOKEN_ADDRESS`, `RPC_URL`, `EXPLORER_URL` | No | Default to $LOCKRA on Robinhood Chain. |
 
