@@ -162,3 +162,23 @@ test('run() does not pile up abort listeners while polling', async () => {
   c.abort();
   await running;
 });
+
+test('an aggregator sell that looks like a buy into the pool is not a buy', () => {
+  const SELLER = '0x4444444444444444444444444444444444444444';
+  // seller -> aggregator (LOCKRA), aggregator -> pool (LOCKRA), pool -> aggregator (WETH), aggregator -> seller (WETH)
+  const logs = [tr(TOKEN, SELLER, ROUTER, 1000n * E18), tr(TOKEN, ROUTER, POOL, 1000n * E18), tr(WETH, POOL, ROUTER, E18 / 10n), tr(WETH, ROUTER, SELLER, E18 / 10n)];
+  const contracts = new Set([ROUTER, POOL]);
+  assert.equal(classify(logs, { token: TOKEN, contracts }).filter((e) => e.type === 'buy').length, 1, 'shape alone is fooled');
+  assert.equal(classify(logs, { token: TOKEN, contracts, signer: SELLER }).length, 0, 'the signer check catches it');
+});
+
+test('a normal buy signed by the buyer still counts', () => {
+  const logs = [tr(WETH, ROUTER, POOL, E18), tr(TOKEN, POOL, BUYER, 10n * E18)];
+  assert.equal(classify(logs, { token: TOKEN, contracts: new Set([POOL, ROUTER]), signer: BUYER }).length, 1);
+});
+
+test('ETH price comes from DexScreener priceUsd / priceNative', async () => {
+  const { createEthPrice } = await import('../src/alerts.js');
+  const fetch = async (url) => ({ ok: true, json: async () => (url.includes('dexscreener') ? { pairs: [{ quoteToken: { symbol: 'WETH' }, priceUsd: '0.003', priceNative: '0.000001', liquidity: { usd: 1 } }] } : {}) });
+  assert.equal(Math.round(await createEthPrice('https://x', fetch, TOKEN)()), 3000);
+});

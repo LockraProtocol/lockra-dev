@@ -42,7 +42,7 @@ export const formatUsd = (n) => (n >= 1e6 ? `$${(n / 1e6).toFixed(2)}M` : n >= 1
  * @param {{ token: string, pools?: string[] }} cfg
  * @returns {{ type: 'buy', buyer: string, pool: string, amount: bigint, quote?: { token: string, value: bigint } }[] | { type: 'burn', from: string, amount: bigint }[]}
  */
-export function classify(logs, { token, pools = [], contracts = null }) {
+export function classify(logs, { token, pools = [], contracts = null, signer = null }) {
   const t = token.toLowerCase();
   const trusted = new Set(pools.map((p) => p.toLowerCase()));
   const transfers = logs.map(decodeTransfer).filter(Boolean).sort((a, b) => a.logIndex - b.logIndex);
@@ -62,6 +62,13 @@ export function classify(logs, { token, pools = [], contracts = null }) {
     for (let at = x.logIndex, hop; (hop = transfers.find((y) => y.token === t && y.from === buyer && y.logIndex > at && y.to !== DEAD)); at = hop.logIndex) buyer = hop.to;
     if (trusted.has(buyer) || (contracts && !trusted.size && buyer === x.from)) continue;
     events.push({ type: 'buy', buyer, pool: x.from, amount: x.value, tx: x.tx, quote: paid ? { token: paid.token, value: paid.value } : undefined });
+  }
+  // The wallet that signed the transaction tells buys from sells: if it ends up with fewer tokens,
+  // it sold, whatever route the aggregator took (some routes look like a buy into the pool).
+  if (signer) {
+    const me = signer.toLowerCase();
+    const delta = transfers.reduce((d, y) => (y.token !== t ? d : d + (y.to === me ? y.value : 0n) - (y.from === me ? y.value : 0n)), 0n);
+    if (delta < 0n) return events.filter((e) => e.type !== 'buy');
   }
   return events;
 }
@@ -143,10 +150,13 @@ export function createAlerts(o) {
       for (const a of senders) if (!codeCache.has(a)) codeCache.set(a, ((await o.rpc('eth_getCode', [a, 'latest'])) || '0x').length > 2);
       for (const a of senders) if (codeCache.get(a)) contracts.add(a);
     }
-    const events = classify(receipt.logs, { token: o.token, pools: o.pools, contracts });
+    const events = classify(receipt.logs, { token: o.token, pools: o.pools, contracts, signer: receipt.from });
     if (!events.length) return;
     const { symbol, decimals } = await tokenMeta(o.token.toLowerCase());
     if (supply == null) supply = BigInt(await call(o.token, '0x18160ddd'));
+    // Market cap uses the circulating supply: tokens in the dead address are gone.
+    const burned = await call(o.token, '0x70a08231' + DEAD.slice(2).padStart(64, '0')).then(BigInt).catch(() => 0n);
+    const circulating = supply - burned;
     for (const ev of events) {
       let html;
       if (ev.type === 'buy') {
@@ -156,7 +166,7 @@ export function createAlerts(o) {
         const usd = ev.quote && quoteUsd ? (Number(ev.quote.value) / 10 ** q.decimals) * quoteUsd : null;
         if (usd != null && ev.amount > 0n) lastPrice = usd / (Number(ev.amount) / 10 ** decimals);
         if (o.minUsd && usd != null && usd < o.minUsd) continue;
-        html = buyMessage({ ev, symbol, decimals, quoteSymbol: q.symbol, quoteDecimals: q.decimals, quoteUsd, supply, links: { explorer: o.explorer }, emoji: o.emoji, step: o.step });
+        html = buyMessage({ ev, symbol, decimals, quoteSymbol: q.symbol, quoteDecimals: q.decimals, quoteUsd, supply: circulating, links: { explorer: o.explorer }, emoji: o.emoji, step: o.step });
       } else {
         if (!o.burns) continue;
         html = burnMessage({ ev, symbol, decimals, links: { explorer: o.explorer }, ticketSize: o.ticketSize });
@@ -216,13 +226,23 @@ export function createRpc(url, doFetch = globalThis.fetch) {
   };
 }
 
-/** ETH price in USD from the Blockscout explorer stats, cached for a minute. */
-export function createEthPrice(explorer, doFetch = globalThis.fetch) {
+/**
+ * ETH price in USD, cached for a minute. DexScreener first (it gives the token price in USD and in
+ * the quote token, so ETH = priceUsd / priceNative), then the explorer stats.
+ */
+export function createEthPrice(explorer, doFetch = globalThis.fetch, token = null) {
   let cache = { at: 0, v: null };
+  const get = (url) => doFetch(url, { headers: { accept: 'application/json', 'user-agent': 'Mozilla/5.0 (compatible; LockraBot/1.0; +https://lockra.buzz)' }, signal: AbortSignal.timeout(10_000) }).then((r) => { if (!r.ok) throw new Error(String(r.status)); return r.json(); });
   return async () => {
-    if (Date.now() - cache.at < 60_000) return cache.v;
-    const r = await doFetch(`${explorer}/api/v2/stats`, { signal: AbortSignal.timeout(10_000) });
-    const v = Number((await r.json()).coin_price) || null;
+    if (Date.now() - cache.at < 60_000 && cache.v) return cache.v;
+    let v = null;
+    if (token) {
+      const j = await get(`https://api.dexscreener.com/latest/dex/tokens/${token}`).catch(() => null);
+      const p = (j?.pairs || []).filter((x) => /^W?ETH$/i.test(x.quoteToken?.symbol || '') && Number(x.priceNative) > 0)
+        .sort((a, b) => (b.liquidity?.usd || 0) - (a.liquidity?.usd || 0))[0];
+      if (p) v = Number(p.priceUsd) / Number(p.priceNative);
+    }
+    if (!v) v = Number((await get(`${explorer}/api/v2/stats`).catch(() => ({}))).coin_price) || null;
     cache = { at: Date.now(), v };
     return v;
   };
