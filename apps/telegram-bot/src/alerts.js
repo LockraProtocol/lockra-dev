@@ -80,7 +80,15 @@ export function classify(logs, { token, pools = [], contracts = null, signer = n
   const buys = events.filter((e) => e.type === 'buy');
   if (buys.length > 1) {
     const me = signer?.toLowerCase();
-    const main = buys.find((b) => b.buyer === me) || buys.reduce((a, b) => (b.amount > a.amount ? b : a));
+    const mine = buys.filter((b) => b.buyer === me);
+    const main = (mine.length ? mine : buys).reduce((a, b) => (b.amount > a.amount ? b : a));
+    // The amount is what the buyer really ended up with in this transaction, not one leg of it.
+    const net = transfers.reduce((d, y) => (y.token !== t ? d : d + (y.to === main.buyer ? y.value : 0n) - (y.from === main.buyer ? y.value : 0n)), 0n);
+    if (net > 0n) main.amount = net;
+    // A route through several pools pays each of them: add up what the buyer paid, once per pool.
+    const paidPools = new Map();
+    for (const b of buys) if (b.quote && main.quote && b.quote.token === main.quote.token && b.pool) paidPools.set(b.pool, b.quote.value);
+    if (paidPools.size > 1) main.quote = { token: main.quote.token, value: [...paidPools.values()].reduce((a, v) => a + v, 0n) };
     return events.filter((e) => e.type !== 'buy' || e === main);
   }
   return events;
