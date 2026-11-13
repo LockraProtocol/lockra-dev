@@ -182,6 +182,7 @@ export function createAlerts(o) {
         const quoteUsd = STABLE.test(q.symbol) ? 1 : isEth && o.ethUsd ? await o.ethUsd().catch(() => null) : null;
         const usd = ev.quote && quoteUsd ? (Number(ev.quote.value) / 10 ** q.decimals) * quoteUsd : null;
         if (usd != null && ev.amount > 0n) lastPrice = usd / (Number(ev.amount) / 10 ** decimals);
+        if (usd == null) log(`tx ${ev.tx}: no dollar value for ${formatUnits(ev.quote?.value ?? 0n, q.decimals)} ${q.symbol || '?'}`);
         // With a minimum set, a buy whose dollar value is unknown is skipped rather than guessed.
         if (o.minUsd && (usd == null || usd < o.minUsd)) continue;
         // Balance right after the buy, read at its block; minus the buy gives the balance before.
@@ -250,7 +251,7 @@ export function createRpc(url, doFetch = globalThis.fetch) {
 
 /**
  * ETH price in USD, cached for a minute. DexScreener first (it gives the token price in USD and in
- * the quote token, so ETH = priceUsd / priceNative), then the explorer stats.
+ * the quote token, so ETH = priceUsd / priceNative), then Coinbase, then the explorer stats.
  */
 export function createEthPrice(explorer, doFetch = globalThis.fetch, token = null) {
   let cache = { at: 0, v: null };
@@ -264,6 +265,8 @@ export function createEthPrice(explorer, doFetch = globalThis.fetch, token = nul
         .sort((a, b) => (b.liquidity?.usd || 0) - (a.liquidity?.usd || 0))[0];
       if (p) v = Number(p.priceUsd) / Number(p.priceNative);
     }
+    // Coinbase's public spot price works from any server and needs no key.
+    if (!v) v = Number((await get('https://api.coinbase.com/v2/prices/ETH-USD/spot').catch(() => null))?.data?.amount) || null;
     if (!v) v = Number((await get(`${explorer}/api/v2/stats`).catch(() => ({}))).coin_price) || null;
     cache = { at: Date.now(), v };
     return v;
