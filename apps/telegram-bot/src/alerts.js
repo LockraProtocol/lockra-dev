@@ -74,6 +74,23 @@ export function classify(logs, { token, pools = [], contracts = null, signer = n
     const delta = transfers.reduce((d, y) => (y.token !== t ? d : d + (y.to === me ? y.value : 0n) - (y.from === me ? y.value : 0n)), 0n);
     if (delta < 0n) return events.filter((e) => e.type !== 'buy');
   }
+  // One swap is one buy. A pool or router can split its output (a fee or referral cut to another
+  // address, then the rest to the buyer); keep only the main recipient: the signer if it is one of
+  // them, otherwise the largest amount.
+  const buys = events.filter((e) => e.type === 'buy');
+  if (buys.length > 1) {
+    const me = signer?.toLowerCase();
+    const mine = buys.filter((b) => b.buyer === me);
+    const main = (mine.length ? mine : buys).reduce((a, b) => (b.amount > a.amount ? b : a));
+    // The amount is what the buyer really ended up with in this transaction, not one leg of it.
+    const net = transfers.reduce((d, y) => (y.token !== t ? d : d + (y.to === main.buyer ? y.value : 0n) - (y.from === main.buyer ? y.value : 0n)), 0n);
+    if (net > 0n) main.amount = net;
+    // A route through several pools pays each of them: add up what the buyer paid, once per pool.
+    const paidPools = new Map();
+    for (const b of buys) if (b.quote && main.quote && b.quote.token === main.quote.token && b.pool) paidPools.set(b.pool, b.quote.value);
+    if (paidPools.size > 1) main.quote = { token: main.quote.token, value: [...paidPools.values()].reduce((a, v) => a + v, 0n) };
+    return events.filter((e) => e.type !== 'buy' || e === main);
+  }
   return events;
 }
 
@@ -105,7 +122,8 @@ export function buyMessage({ ev, symbol, decimals, quoteSymbol, quoteDecimals, q
   const paid = ev.quote ? Number(ev.quote.value) / 10 ** quoteDecimals : null;
   const usd = paid != null && quoteUsd ? paid * quoteUsd : null;
   const mc = usd && got && supply ? (usd / got) * (Number(supply) / 10 ** decimals) : null;
-  const position = before == null ? null : before === 0n ? '🆕 New holder' : `📈 Position +${formatCompact((Number(ev.amount) / Number(before)) * 100)}%`;
+  // A previous balance under 1% of this buy is dust: call it a new holder rather than "+50,000%".
+  const position = before == null ? null : before * 100n < ev.amount ? '🆕 New holder' : `📈 Position +${formatCompact((Number(ev.amount) / Number(before)) * 100)}%`;
   const lines = [
     `<b>$${esc(symbol)} Buy!</b>`,
     usd != null ? emoji.repeat(strength(usd, step)) : emoji,
