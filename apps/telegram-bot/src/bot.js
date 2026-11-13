@@ -17,7 +17,7 @@ export const COMMANDS = [
   { command: 'seal', description: 'Seal a message until a date (private chat)' },
   { command: 'open', description: 'Open a capsule or see how long is left' },
   { command: 'raffle', description: 'Raffle tickets, burns and countdown' },
-  { command: 'stats', description: '$LOCKRA price, holders and burned' },
+  { command: 'lockra', description: '$LOCKRA price, market cap and burned' },
   { command: 'help', description: 'How LOCKRA works' },
 ];
 
@@ -35,7 +35,7 @@ const HELP = [
   '<code>/open https://lockra.buzz/#c=…</code>',
   'or reply <code>/open</code> to a message that contains a capsule link.',
   '',
-  '<b>Community</b>: /raffle for tickets and countdown, /stats for price, holders and burns.',
+  '<b>Community</b>: /raffle for tickets and countdown, /lockra for price, market cap and burns.',
   '',
   '⚠️ Never seal seed phrases, private keys or passwords.',
 ].join('\n');
@@ -193,10 +193,11 @@ export function createBot({ call, username, sdkOptions = {}, now = Date.now, log
         case 'open':
           return await onOpen(msg, cmd.args);
         case 'raffle':
+        case 'lockra':
         case 'stats': {
           if (!info) return;
           const raffleUrl = info.raffleUrl || 'https://lockra.buzz/raffle';
-          const text = await info[cmd.name]().catch((e) => { log(`/${cmd.name}: ${e.message}`); return null; });
+          const text = await info[cmd.name === 'raffle' ? 'raffle' : 'stats']().catch((e) => { log(`/${cmd.name}: ${e.message}`); return null; });
           if (!text) return await reply(msg, 'Could not load the numbers right now. Please try again in a minute.');
           return await reply(msg, text, cmd.name === 'raffle' ? { reply_markup: { inline_keyboard: [[{ text: '🔥 Burn to enter', url: raffleUrl }]] } } : {});
         }

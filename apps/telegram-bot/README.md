@@ -9,7 +9,7 @@ Seal and open LOCKRA time capsules without leaving Telegram. Built on [lockra-sd
 | `/open <link>` | Anywhere | Shows how long is left, or the message once unlocked. |
 | `/open` as a reply | Anywhere | Opens the capsule link in the replied-to message. |
 | `/raffle` | Anywhere | Raffle tickets, wallets, burned amount and countdown, live from the explorer. |
-| `/stats` | Anywhere | $LOCKRA price, market cap, holders and total burned. |
+| `/lockra` | Anywhere | $LOCKRA price, market cap, liquidity, volume and total burned (`/stats` also works). |
 | `/help` | Anywhere | How LOCKRA works. |
 | `/chatid` | Anywhere | Shows the chat id, for setting up alerts. Not listed in the menu. |
 
