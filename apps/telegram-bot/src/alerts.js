@@ -118,6 +118,7 @@ export function createAlerts(o) {
   let next = null; // next block to scan
   const seen = new Set();
   const codeCache = new Map();
+  let lastPrice = null; // USD per token from the latest buy
 
   const call = (to, data) => o.rpc('eth_call', [{ to, data }, 'latest']);
   async function tokenMeta(addr) {
@@ -153,6 +154,7 @@ export function createAlerts(o) {
         const isEth = /^W?ETH$/i.test(q.symbol);
         const quoteUsd = isEth && o.ethUsd ? await o.ethUsd().catch(() => null) : null;
         const usd = ev.quote && quoteUsd ? (Number(ev.quote.value) / 10 ** q.decimals) * quoteUsd : null;
+        if (usd != null && ev.amount > 0n) lastPrice = usd / (Number(ev.amount) / 10 ** decimals);
         if (o.minUsd && usd != null && usd < o.minUsd) continue;
         html = buyMessage({ ev, symbol, decimals, quoteSymbol: q.symbol, quoteDecimals: q.decimals, quoteUsd, supply, links: { explorer: o.explorer }, emoji: o.emoji, step: o.step });
       } else {
@@ -192,7 +194,7 @@ export function createAlerts(o) {
     }
   }
 
-  return { tick, run, handleTx };
+  return { tick, run, handleTx, lastPrice: () => lastPrice };
 }
 
 /** Decode an ABI-encoded string (or a bytes32 string) returned by eth_call. */

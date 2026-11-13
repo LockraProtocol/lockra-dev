@@ -14,6 +14,6 @@
   },
   "scripts": {
     "start": "node bin/start.js",
-    "test": "node --test test/parse.test.js test/bot.test.js test/telegram.test.js test/alerts.test.js"
+    "test": "node --test test/parse.test.js test/bot.test.js test/telegram.test.js test/alerts.test.js test/info.test.js"
   }
 }
