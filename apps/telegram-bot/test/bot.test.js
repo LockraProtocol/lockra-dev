@@ -173,3 +173,9 @@ describe('alert media', () => {
     assert.equal(calls.length, 0);
   });
 });
+
+test('a custom emoji sent in a private chat returns its id', async () => {
+  const { bot, last } = setup();
+  await bot.handleUpdate(dm('🔒', { entities: [{ type: 'custom_emoji', offset: 0, length: 2, custom_emoji_id: '5368324170671202286' }] }));
+  assert.match(last().params.text, /<code>5368324170671202286<\/code>/);
+});
