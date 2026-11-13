@@ -75,7 +75,7 @@ Turn it on:
 | `ALERT_MEDIA` | No | GIF or video sent with each alert. Send it to the bot in a private chat and it replies with the exact value to use (`video:…` or `animation:…`). A direct URL also works. |
 | `BURN_MEDIA` | No | GIF or video for burn alerts, same format as `ALERT_MEDIA`. Defaults to `ALERT_MEDIA`. |
 | `ALERT_BURNS` | No | Set to `false` to skip burn alerts. |
-| `BUY_URL`, `CHART_URL` | No | Links for the Buy and Chart buttons under each alert. |
+| `BUY_URL`, `CHART_URL` | No | Buy button link (default: the token on fobo.fun) and an optional Chart button. Each alert also has a Tx button. |
 | `RAFFLE_URL`, `RAFFLE_TICKET` | No | Raffle link and tokens per ticket. Defaults: lockra.buzz/raffle, `50000`. |
 | `RAFFLE_START`, `RAFFLE_END` | No | Campaign window (ISO dates, UTC) for `/raffle`. Defaults to the FOBO × LOCKRA raffle. |
 | `RAFFLE_PRIZE`, `RAFFLE_MAX_TICKETS` | No | Prize text and tickets per wallet for `/raffle`. |

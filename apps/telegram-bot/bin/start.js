@@ -36,10 +36,11 @@ let alerts = null;
 
 const chats = (process.env.ALERT_CHAT_IDS || '').split(',').map((s) => s.trim()).filter(Boolean);
 if (chats.length) {
-  const buttons = [
-    process.env.BUY_URL && { text: '🛒 Buy', url: process.env.BUY_URL },
-    process.env.CHART_URL && { text: '📈 Chart', url: process.env.CHART_URL },
-    { text: '🎟 Raffle', url: raffleUrl },
+  const buyUrl = process.env.BUY_URL || `https://fobo.fun/?token=${tokenAddress}`;
+  const buttons = (ev) => [
+    ev.type === 'buy' ? { text: '🛒 Buy $LOCKRA', url: buyUrl } : { text: '🎟 Raffle', url: raffleUrl },
+    { text: 'Tx', url: `${explorer}/tx/${ev.tx}` },
+    process.env.CHART_URL && ev.type === 'buy' && { text: '📈 Chart', url: process.env.CHART_URL },
   ].filter(Boolean);
   // Optional GIF or video per alert type: "video:<file_id>" or "animation:<file_id>" (send it to the
   // bot in a DM to get this), or a plain URL / file_id, sent as an animation.
