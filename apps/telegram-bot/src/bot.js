@@ -156,9 +156,9 @@ export function createBot({ call, username, sdkOptions = {}, now = Date.now, log
     const kind = msg.animation ? 'animation' : 'video';
     const id = (msg.animation || msg.video).file_id;
     return reply(msg, [
-      '🎬 <b>Media for buy alerts</b>',
+      '🎬 <b>Media for alerts</b>',
       '',
-      'Set this as <code>ALERT_MEDIA</code> on your host:',
+      'Use this value on your host as <code>ALERT_MEDIA</code> (buys) or <code>BURN_MEDIA</code> (burns):',
       `<code>${kind}:${esc(id)}</code>`,
     ].join('\n'));
   }

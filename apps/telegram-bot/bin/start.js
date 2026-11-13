@@ -36,13 +36,15 @@ if (chats.length) {
     process.env.CHART_URL && { text: '📈 Chart', url: process.env.CHART_URL },
     { text: '🎟 Raffle', url: process.env.RAFFLE_URL || 'https://lockra.buzz/raffle' },
   ].filter(Boolean);
-  // Optional GIF or video: "video:<file_id>" or "animation:<file_id>" (send it to the bot in a DM to get this),
-  // or a plain URL / file_id, sent as an animation.
-  const [, mediaKind = 'animation', media] = /^(?:(video|animation):)?(.+)$/.exec(process.env.ALERT_MEDIA || '') || [];
-  const send = (chat_id, html, btns) => {
+  // Optional GIF or video per alert type: "video:<file_id>" or "animation:<file_id>" (send it to the
+  // bot in a DM to get this), or a plain URL / file_id, sent as an animation.
+  const parseMedia = (v) => { const m = /^(?:(video|animation):)?(.+)$/.exec(v || ''); return m ? { kind: m[1] || 'animation', id: m[2] } : null; };
+  const mediaFor = { buy: parseMedia(process.env.ALERT_MEDIA), burn: parseMedia(process.env.BURN_MEDIA || process.env.ALERT_MEDIA) };
+  const send = (chat_id, html, btns, type) => {
     const reply_markup = btns.length ? { inline_keyboard: [btns] } : undefined;
+    const media = mediaFor[type];
     return media
-      ? telegram.call(mediaKind === 'video' ? 'sendVideo' : 'sendAnimation', { chat_id, [mediaKind]: media, caption: html, parse_mode: 'HTML', reply_markup })
+      ? telegram.call(media.kind === 'video' ? 'sendVideo' : 'sendAnimation', { chat_id, [media.kind]: media.id, caption: html, parse_mode: 'HTML', reply_markup })
       : telegram.call('sendMessage', { chat_id, text: html, parse_mode: 'HTML', link_preview_options: { is_disabled: true }, reply_markup });
   };
   const alerts = createAlerts({
