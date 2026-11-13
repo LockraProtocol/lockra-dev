@@ -223,3 +223,9 @@ test('position: new holder or growth of an existing bag', async () => {
   assert.equal(formatCompact(2_530_000), '2.53M');
   assert.equal(formatCompact(1_000), '1K');
 });
+
+test('ETH price falls back to Coinbase when DexScreener has no pair', async () => {
+  const { createEthPrice } = await import('../src/alerts.js');
+  const fetch = async (url) => ({ ok: true, json: async () => (url.includes('coinbase') ? { data: { amount: '2500.12' } } : { pairs: [] }) });
+  assert.equal(await createEthPrice('https://x', fetch, TOKEN)(), 2500.12);
+});
