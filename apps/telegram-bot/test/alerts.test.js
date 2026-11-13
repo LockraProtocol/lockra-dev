@@ -182,3 +182,33 @@ test('ETH price comes from DexScreener priceUsd / priceNative', async () => {
   const fetch = async (url) => ({ ok: true, json: async () => (url.includes('dexscreener') ? { pairs: [{ quoteToken: { symbol: 'WETH' }, priceUsd: '0.003', priceNative: '0.000001', liquidity: { usd: 1 } }] } : {}) });
   assert.equal(Math.round(await createEthPrice('https://x', fetch, TOKEN)()), 3000);
 });
+
+test('stablecoin buys are valued 1:1 and small ones are filtered by the minimum', async () => {
+  const USDG = '0x5555555555555555555555555555555555555555';
+  let head = 1;
+  const logs = []; const receipts = {};
+  const str = (x) => '0x' + '20'.padStart(64, '0') + x.length.toString(16).padStart(64, '0') + Buffer.from(x).toString('hex').padEnd(64, '0');
+  const rpc = async (m, p) => {
+    if (m === 'eth_blockNumber') return '0x' + head.toString(16);
+    if (m === 'eth_getLogs') return logs.filter((l) => l.block >= parseInt(p[0].fromBlock, 16) && l.block <= parseInt(p[0].toBlock, 16));
+    if (m === 'eth_getTransactionReceipt') return receipts[p[0]];
+    if (m === 'eth_getCode') return p[0] === POOL ? '0x60' : '0x';
+    if (m === 'eth_call') {
+      if (p[0].data === '0x313ce567') return '0x' + (p[0].to === USDG ? 6 : 18).toString(16).padStart(64, '0');
+      if (p[0].data === '0x95d89b41') return str(p[0].to === USDG ? 'USDG' : 'LOCKRA');
+      if (p[0].data === '0x18160ddd') return '0x' + (1_000_000_000n * E18).toString(16);
+      return '0x0';
+    }
+  };
+  const mine = (txLogs, h) => { head++; txLogs.forEach((l) => { l.block = head; l.transactionHash = h; logs.push(l); }); receipts[h] = { status: '0x1', logs: txLogs }; };
+  const sent = [];
+  const alerts = createAlerts({ rpc, send: async (c, html) => sent.push(html), chats: ['-1'], token: TOKEN, explorer: 'https://x', minUsd: 50 });
+  await alerts.tick();
+  mine([tr(USDG, ROUTER, POOL, 256_500n), tr(TOKEN, POOL, BUYER, 1693n * E18)], '0xsmall'); // $0.26
+  mine([tr(USDG, ROUTER, POOL, 120_000_000n), tr(TOKEN, POOL, BUYER, 800_000n * E18)], '0xbig'); // $120
+  await alerts.tick();
+  assert.equal(sent.length, 1);
+  assert.match(sent[0], /💰 120 USDG \(\$120\.00\)/);
+  assert.equal((sent[0].match(/🟢/g) || []).length, 12);
+  assert.match(sent[0], /Market cap \$150,000/); // 120 / 800k * 1B
+});

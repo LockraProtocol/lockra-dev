@@ -7,6 +7,8 @@
 export const TRANSFER = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef';
 export const DEAD = '0x000000000000000000000000000000000000dead';
 const ZERO = '0x0000000000000000000000000000000000000000';
+/** Dollar stablecoins, valued 1:1 (USDG is common on Robinhood Chain). */
+export const STABLE = /^(USDG|USDC(\.E)?|USDT0?|USD₮0?|DAI|USDS|USDE|PYUSD|FDUSD)$/i;
 
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 const topicAddr = (t) => '0x' + t.slice(-40).toLowerCase();
@@ -86,7 +88,7 @@ export function buyMessage({ ev, symbol, decimals, quoteSymbol, quoteDecimals, q
   const mc = usd && got && supply ? (usd / got) * (Number(supply) / 10 ** decimals) : null;
   const lines = [
     `<b>$${esc(symbol)} Buy!</b>`,
-    emoji.repeat(strength(usd ?? paid ?? 0, usd != null ? step : step / 3000)),
+    usd != null ? emoji.repeat(strength(usd, step)) : emoji,
     '',
     paid != null ? `💰 ${formatUnits(ev.quote.value, quoteDecimals)} ${esc(quoteSymbol)}${usd != null ? ` (${formatUsd(usd)})` : ''}` : null,
     `🔒 ${formatUnits(ev.amount, decimals)} $${esc(symbol)}`,
@@ -162,10 +164,11 @@ export function createAlerts(o) {
       if (ev.type === 'buy') {
         const q = ev.quote ? await tokenMeta(ev.quote.token) : { symbol: '', decimals: 18 };
         const isEth = /^W?ETH$/i.test(q.symbol);
-        const quoteUsd = isEth && o.ethUsd ? await o.ethUsd().catch(() => null) : null;
+        const quoteUsd = STABLE.test(q.symbol) ? 1 : isEth && o.ethUsd ? await o.ethUsd().catch(() => null) : null;
         const usd = ev.quote && quoteUsd ? (Number(ev.quote.value) / 10 ** q.decimals) * quoteUsd : null;
         if (usd != null && ev.amount > 0n) lastPrice = usd / (Number(ev.amount) / 10 ** decimals);
-        if (o.minUsd && usd != null && usd < o.minUsd) continue;
+        // With a minimum set, a buy whose dollar value is unknown is skipped rather than guessed.
+        if (o.minUsd && (usd == null || usd < o.minUsd)) continue;
         html = buyMessage({ ev, symbol, decimals, quoteSymbol: q.symbol, quoteDecimals: q.decimals, quoteUsd, supply: circulating, links: { explorer: o.explorer }, emoji: o.emoji, step: o.step });
       } else {
         if (!o.burns) continue;
