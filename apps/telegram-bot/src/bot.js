@@ -174,6 +174,9 @@ export function createBot({ call, username, sdkOptions = {}, now = Date.now, log
           return await onSeal(msg, cmd.args);
         case 'open':
           return await onOpen(msg, cmd.args);
+        case 'chatid':
+          // Lets an admin find the id to put in ALERT_CHAT_IDS. Not listed in the menu.
+          return await reply(msg, `Chat id: <code>${esc(String(msg.chat.id))}</code>`);
         default:
           return;
       }
