@@ -116,7 +116,7 @@ describe('createAlerts', () => {
   test('posts one alert per buy, starting from the current block', async () => {
     const c = chain();
     const sent = [];
-    const alerts = createAlerts({ rpc: c.rpc, send: async (chat, html) => sent.push({ chat, html }), chats: ['-100'], token: TOKEN, explorer: 'https://x', ethUsd: async () => 3000, burns: true, ticketSize: 50_000n * E18 });
+    const alerts = createAlerts({ rpc: c.rpc, send: async (chat, html, _b, type) => sent.push({ chat, html, type }), chats: ['-100'], token: TOKEN, explorer: 'https://x', ethUsd: async () => 3000, burns: true, ticketSize: 50_000n * E18 });
     c.mine([tr(WETH, ROUTER, POOL, E18), tr(TOKEN, POOL, BUYER, E18)], '0xold');
     await alerts.tick(); // first tick only sets the starting block
     assert.equal(sent.length, 0);
@@ -127,6 +127,7 @@ describe('createAlerts', () => {
     assert.equal(sent.length, 2);
     assert.match(sent[0].html, /Buy!.*\n.*\n\n💰 0\.1 WETH \(\$300\.00\)/s);
     assert.match(sent[1].html, /Burn!/);
+    assert.deepEqual(sent.map((x) => x.type), ['buy', 'burn']);
     assert.match(sent[1].html, /🎟 1 raffle ticket\n/);
   });
 

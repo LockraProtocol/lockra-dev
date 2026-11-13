@@ -104,7 +104,7 @@ export function burnMessage({ ev, symbol, decimals, links, ticketSize }) {
  * Watch the chain and post alerts.
  * @param {{
  *   rpc: (method: string, params: any[]) => Promise<any>,
- *   send: (chatId: string, html: string, buttons: object) => Promise<void>,
+ *   send: (chatId: string, html: string, buttons: object, type: 'buy' | 'burn') => Promise<void>,
  *   chats: string[], token: string, pools?: string[], explorer: string,
  *   minUsd?: number, step?: number, emoji?: string, burns?: boolean, ticketSize?: bigint,
  *   buttons?: { text: string, url: string }[],
@@ -159,7 +159,7 @@ export function createAlerts(o) {
         if (!o.burns) continue;
         html = burnMessage({ ev, symbol, decimals, links: { explorer: o.explorer }, ticketSize: o.ticketSize });
       }
-      for (const chat of o.chats) await o.send(chat, html, o.buttons || []).catch((e) => log(`send to ${chat} failed: ${e.message}`));
+      for (const chat of o.chats) await o.send(chat, html, o.buttons || [], ev.type).catch((e) => log(`send to ${chat} failed: ${e.message}`));
     }
   }
 
