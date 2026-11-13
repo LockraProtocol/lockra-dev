@@ -205,12 +205,21 @@ export function createAlerts(o) {
     if (head < next) return;
     const to = Math.min(head, next + (o.maxRange || 2000) - 1);
     const logs = await o.rpc('eth_getLogs', [{ address: o.token, topics: [TRANSFER], fromBlock: '0x' + next.toString(16), toBlock: '0x' + to.toString(16) }]);
-    const txs = [...new Set(logs.map((l) => l.transactionHash))];
-    for (const h of txs) {
-      if (seen.has(h)) continue;
-      seen.add(h);
+    // In chain order. If a transaction cannot be read (e.g. the RPC is rate limiting), stop there and
+    // retry from its block on the next tick, so no buy is skipped. Seen hashes prevent duplicates.
+    const txs = [];
+    for (const l of logs) if (!txs.some((t) => t.hash === l.transactionHash)) txs.push({ hash: l.transactionHash, block: Number(BigInt(l.blockNumber ?? '0x' + next.toString(16))) });
+    for (const { hash, block } of txs) {
+      if (seen.has(hash)) continue;
+      try {
+        await handleTx(hash);
+      } catch (e) {
+        log(`tx ${hash} failed, will retry: ${e.message}`);
+        next = block;
+        return;
+      }
+      seen.add(hash);
       if (seen.size > 5000) seen.delete(seen.values().next().value);
-      await handleTx(h).catch((e) => log(`tx ${h} failed: ${e.message}`));
     }
     next = to + 1;
   }
@@ -239,13 +248,23 @@ export function decodeString(hex) {
 }
 
 /** JSON-RPC client over fetch. */
-export function createRpc(url, doFetch = globalThis.fetch) {
+export function createRpc(url, doFetch = globalThis.fetch, { retries = 4, wait = (ms) => new Promise((r) => setTimeout(r, ms)) } = {}) {
   let id = 0;
   return async (method, params) => {
-    const res = await doFetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: ++id, method, params }), signal: AbortSignal.timeout(20_000) });
-    const body = await res.json();
-    if (body.error) throw new Error(`${method}: ${body.error.message}`);
-    return body.result;
+    for (let attempt = 0; ; attempt++) {
+      let res; let body;
+      try {
+        res = await doFetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: ++id, method, params }), signal: AbortSignal.timeout(20_000) });
+        body = res.status === 429 ? { error: { message: 'Too Many Requests' } } : await res.json();
+      } catch (e) {
+        body = { error: { message: e.message } };
+      }
+      if (!body.error) return body.result;
+      // Public RPCs rate limit bursts: back off and try again (1s, 2s, 4s, 8s).
+      const retryable = /too many|rate|limit|timeout|fetch failed|429|5\d\d/i.test(body.error.message || '') || (res && res.status >= 500);
+      if (!retryable || attempt >= retries) throw new Error(`${method}: ${body.error.message}`);
+      await wait(1000 * 2 ** attempt);
+    }
   };
 }
 
