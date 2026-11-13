@@ -179,3 +179,11 @@ test('a custom emoji sent in a private chat returns its id', async () => {
   await bot.handleUpdate(dm('🔒', { entities: [{ type: 'custom_emoji', offset: 0, length: 2, custom_emoji_id: '5368324170671202286' }] }));
   assert.match(last().params.text, /<code>5368324170671202286<\/code>/);
 });
+
+test('stickers: custom emoji stickers return their id, normal stickers get a hint', async () => {
+  const { bot, last } = setup();
+  await bot.handleUpdate(dm(undefined, { sticker: { file_id: 'f', custom_emoji_id: '777' } }));
+  assert.match(last().params.text, /<code>777<\/code>/);
+  await bot.handleUpdate(dm(undefined, { sticker: { file_id: 'f' } }));
+  assert.match(last().params.text, /not a custom emoji/);
+});
