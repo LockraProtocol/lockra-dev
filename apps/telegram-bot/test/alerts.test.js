@@ -229,3 +229,37 @@ test('ETH price falls back to Coinbase when DexScreener has no pair', async () =
   const fetch = async (url) => ({ ok: true, json: async () => (url.includes('coinbase') ? { data: { amount: '2500.12' } } : { pairs: [] }) });
   assert.equal(await createEthPrice('https://x', fetch, TOKEN)(), 2500.12);
 });
+
+test('the RPC client retries rate-limited calls', async () => {
+  const { createRpc } = await import('../src/alerts.js');
+  let n = 0;
+  const fetch = async () => (++n < 3 ? { status: 429, json: async () => ({}) } : { status: 200, json: async () => ({ result: '0x2a' }) });
+  const rpc = createRpc('https://rpc', fetch, { wait: async () => {} });
+  assert.equal(await rpc('eth_blockNumber', []), '0x2a');
+  assert.equal(n, 3);
+  const bad = createRpc('https://rpc', async () => ({ status: 200, json: async () => ({ error: { message: 'execution reverted' } }) }), { wait: async () => {} });
+  await assert.rejects(bad('eth_call', []), /execution reverted/);
+});
+
+test('a buy whose receipt fails is retried on the next tick, not lost', async () => {
+  let head = 1; let failReceipt = true;
+  const logs = []; const receipts = {};
+  const rpc = async (m, p) => {
+    if (m === 'eth_blockNumber') return '0x' + head.toString(16);
+    if (m === 'eth_getLogs') return logs.filter((l) => l.block >= parseInt(p[0].fromBlock, 16) && l.block <= parseInt(p[0].toBlock, 16));
+    if (m === 'eth_getTransactionReceipt') { if (failReceipt) { failReceipt = false; throw new Error('Too Many Requests'); } return receipts[p[0]]; }
+    if (m === 'eth_getCode') return p[0] === POOL ? '0x60' : '0x';
+    if (m === 'eth_call') return p[0].data === '0x313ce567' ? '0x12' : p[0].data === '0x18160ddd' ? '0x' + (10n ** 27n).toString(16) : '0x0';
+  };
+  const sent = [];
+  const alerts = createAlerts({ rpc, send: async (c, html) => sent.push(html), chats: ['-1'], token: TOKEN, explorer: 'https://x' });
+  await alerts.tick();
+  head++;
+  const txLogs = [tr(WETH, ROUTER, POOL, E18), tr(TOKEN, POOL, BUYER, 10n * E18)];
+  txLogs.forEach((l) => { l.block = head; l.blockNumber = '0x' + head.toString(16); l.transactionHash = '0xretry'; logs.push(l); });
+  receipts['0xretry'] = { status: '0x1', logs: txLogs };
+  await alerts.tick();
+  assert.equal(sent.length, 0);
+  await alerts.tick();
+  assert.equal(sent.length, 1);
+});
