@@ -125,10 +125,12 @@ export function formatCompact(n) {
  * Build the alert text (HTML) for a buy.
  * `before` is the buyer's token balance before this buy (units), when known.
  */
-export function buyMessage({ ev, symbol, decimals, quoteSymbol, quoteDecimals, quoteUsd, supply, links, emoji = '🟢', step = 10, before = null, marketCap = null }) {
+export function buyMessage({ ev, symbol, decimals, quoteSymbol, quoteDecimals, quoteUsd, supply, links, emoji = '🟢', step = 10, before = null, marketCap = null, usdEstimate = null }) {
   const got = Number(ev.amount) / 10 ** decimals;
   const paid = ev.quote ? Number(ev.quote.value) / 10 ** quoteDecimals : null;
-  const usd = paid != null && quoteUsd ? paid * quoteUsd : null;
+  const exact = paid != null && quoteUsd ? paid * quoteUsd : null;
+  // Paid in a token we cannot price (e.g. another launchpad coin): value it at the market price instead.
+  const usd = exact ?? usdEstimate;
   // Market cap from the market (DexScreener) when available. Deriving it from one buy's average price
   // overstates it: that price includes slippage, fees and multi-hop routes.
   const mc = marketCap || (usd && got && supply ? (usd / got) * (Number(supply) / 10 ** decimals) : null);
@@ -138,7 +140,7 @@ export function buyMessage({ ev, symbol, decimals, quoteSymbol, quoteDecimals, q
     `<b>$${esc(symbol)} Buy!</b>`,
     usd != null ? emoji.repeat(strength(usd, step)) : emoji,
     '',
-    paid != null ? `↗ ${formatUnits(ev.quote.value, quoteDecimals)} ${esc(quoteSymbol)}${usd != null ? ` (${formatUsd(usd)})` : ''}` : null,
+    paid != null ? `↗ ${formatUnits(ev.quote.value, quoteDecimals)} ${esc(quoteSymbol)}${exact != null ? ` (${formatUsd(exact)})` : usd != null ? ` (~${formatUsd(usd)})` : ''}` : null,
     `↙ ${formatCompact(got)} $${esc(symbol)}`,
     '',
     `👤 <a href="${links.explorer}/address/${ev.buyer}">${short(ev.buyer)}</a>`,
@@ -229,7 +231,12 @@ export function createAlerts(o) {
         const q = ev.quote ? await tokenMeta(ev.quote.token) : { symbol: '', decimals: 18 };
         const isEth = /^W?ETH$/i.test(q.symbol);
         const quoteUsd = STABLE.test(q.symbol) ? 1 : isEth && o.ethUsd ? await o.ethUsd().catch(() => null) : null;
-        const usd = ev.quote && quoteUsd ? (Number(ev.quote.value) / 10 ** q.decimals) * quoteUsd : null;
+        let usd = ev.quote && quoteUsd ? (Number(ev.quote.value) / 10 ** q.decimals) * quoteUsd : null;
+        let usdEstimate = null;
+        if (usd == null && o.tokenPrice) {
+          const price = await o.tokenPrice().catch(() => null);
+          if (price) usd = usdEstimate = (Number(ev.amount) / 10 ** decimals) * price;
+        }
         if (usd != null && ev.amount > 0n) lastPrice = usd / (Number(ev.amount) / 10 ** decimals);
         if (usd == null) log(`tx ${ev.tx}: no dollar value for ${formatUnits(ev.quote?.value ?? 0n, q.decimals)} ${q.symbol || '?'}`);
         // With a minimum set, a buy whose dollar value is unknown is skipped rather than guessed.
@@ -238,7 +245,7 @@ export function createAlerts(o) {
         const after = await o.rpc('eth_call', [{ to: o.token, data: '0x70a08231' + ev.buyer.slice(2).padStart(64, '0') }, receipt.blockNumber || 'latest']).then(BigInt).catch(() => null);
         const before = after != null && after >= ev.amount ? after - ev.amount : null;
         const marketCap = o.marketCap ? await o.marketCap().catch(() => null) : null;
-        html = buyMessage({ ev, symbol, decimals, quoteSymbol: q.symbol, quoteDecimals: q.decimals, quoteUsd, supply: circulating, links: { explorer: o.explorer }, emoji: o.emoji, step: o.step, before, marketCap });
+        html = buyMessage({ ev, symbol, decimals, quoteSymbol: q.symbol, quoteDecimals: q.decimals, quoteUsd, supply: circulating, links: { explorer: o.explorer }, emoji: o.emoji, step: o.step, before, marketCap, usdEstimate });
       } else {
         if (!o.burns) continue;
         html = burnMessage({ ev, symbol, decimals, links: { explorer: o.explorer }, ticketSize: o.ticketSize });
@@ -318,19 +325,23 @@ export function createRpc(url, doFetch = globalThis.fetch, { retries = 4, wait =
   };
 }
 
-/** The token's market cap from DexScreener (deepest pair), cached for 30 seconds. */
-export function createMarketCap(token, doFetch = globalThis.fetch) {
+/** The token's market cap and USD price from DexScreener (deepest pair), cached for 30 seconds. */
+export function createMarket(token, doFetch = globalThis.fetch) {
   let cache = { at: 0, v: null };
-  return async () => {
+  const load = async () => {
     if (Date.now() - cache.at < 30_000 && cache.v) return cache.v;
     const r = await doFetch(`https://api.dexscreener.com/latest/dex/tokens/${token}`, { headers: { accept: 'application/json' }, signal: AbortSignal.timeout(10_000) });
     if (!r.ok) throw new Error(`dexscreener ${r.status}`);
     const pair = ((await r.json()).pairs || []).sort((a, b) => (b.liquidity?.usd || 0) - (a.liquidity?.usd || 0))[0];
-    const v = Number(pair?.marketCap) || Number(pair?.fdv) || null;
+    const v = { marketCap: Number(pair?.marketCap) || Number(pair?.fdv) || null, priceUsd: Number(pair?.priceUsd) || null };
     cache = { at: Date.now(), v };
     return v;
   };
+  return { marketCap: async () => (await load()).marketCap, price: async () => (await load()).priceUsd };
 }
+
+/** @deprecated use createMarket(token).marketCap */
+export const createMarketCap = (token, doFetch) => createMarket(token, doFetch).marketCap;
 
 /**
  * ETH price in USD, cached for a minute. DexScreener first (it gives the token price in USD and in
