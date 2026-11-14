@@ -244,6 +244,8 @@ export function createAlerts(o) {
         // Balance right after the buy, read at its block; minus the buy gives the balance before.
         const after = await o.rpc('eth_call', [{ to: o.token, data: '0x70a08231' + ev.buyer.slice(2).padStart(64, '0') }, receipt.blockNumber || 'latest']).then(BigInt).catch(() => null);
         const before = after != null && after >= ev.amount ? after - ev.amount : null;
+        // DexScreener lags the chain by a few seconds: wait so the market cap includes this buy.
+        if (o.marketCap && o.marketCapDelayMs) await new Promise((r) => setTimeout(r, o.marketCapDelayMs));
         const marketCap = o.marketCap ? await o.marketCap().catch(() => null) : null;
         html = buyMessage({ ev, symbol, decimals, quoteSymbol: q.symbol, quoteDecimals: q.decimals, quoteUsd, supply: circulating, links: { explorer: o.explorer }, emoji: o.emoji, step: o.step, before, marketCap, usdEstimate });
       } else {
@@ -325,11 +327,11 @@ export function createRpc(url, doFetch = globalThis.fetch, { retries = 4, wait =
   };
 }
 
-/** The token's market cap and USD price from DexScreener (deepest pair), cached for 30 seconds. */
-export function createMarket(token, doFetch = globalThis.fetch) {
+/** The token's market cap and USD price from DexScreener (deepest pair), cached for a few seconds. */
+export function createMarket(token, doFetch = globalThis.fetch, { maxAgeMs = 5_000 } = {}) {
   let cache = { at: 0, v: null };
   const load = async () => {
-    if (Date.now() - cache.at < 30_000 && cache.v) return cache.v;
+    if (Date.now() - cache.at < maxAgeMs && cache.v) return cache.v;
     const r = await doFetch(`https://api.dexscreener.com/latest/dex/tokens/${token}`, { headers: { accept: 'application/json' }, signal: AbortSignal.timeout(10_000) });
     if (!r.ok) throw new Error(`dexscreener ${r.status}`);
     const pair = ((await r.json()).pairs || []).sort((a, b) => (b.liquidity?.usd || 0) - (a.liquidity?.usd || 0))[0];

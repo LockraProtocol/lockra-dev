@@ -64,6 +64,7 @@ if (chats.length) {
     ethUsd: createEthPrice(explorer, fetch, tokenAddress),
     marketCap: market.marketCap,
     tokenPrice: market.price,
+    marketCapDelayMs: Number(process.env.MARKET_CAP_DELAY_MS ?? 8000),
     minUsd: Number(process.env.ALERT_MIN_USD || 0),
     step: Number(process.env.ALERT_STEP_USD || 10),
     // A Telegram custom (animated) emoji, if ALERT_EMOJI_ID is set; ALERT_EMOJI is shown where it is not supported.
