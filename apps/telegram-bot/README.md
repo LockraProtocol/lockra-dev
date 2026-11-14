@@ -8,6 +8,7 @@ Seal and open LOCKRA time capsules without leaving Telegram. Built on [lockra-sd
 | `/seal 2027-01-01 your message` | Private chat | Same, with a UTC date (`2027-01-01T18:30` also works). |
 | `/open <link>` | Anywhere | Shows how long is left, or the message once unlocked. |
 | `/open` as a reply | Anywhere | Opens the capsule link in the replied-to message. |
+| `/predict` | Private chat | Seal a prediction. It is announced sealed in the group and revealed there automatically when its time comes. |
 | `/raffle` | Anywhere | Raffle tickets, wallets, burned amount and countdown, live from the explorer. |
 | `/lockra` | Anywhere | $LOCKRA price, market cap, liquidity, volume and total burned (`/stats` also works). |
 | `/help` | Anywhere | How LOCKRA works. |
@@ -48,6 +49,12 @@ Any platform that can run `npm start` with an environment variable works the sam
 1. Add the bot to the group.
 2. Make it an admin with only **Delete messages** enabled, so it can remove `/seal` commands posted in the group.
 
+## Sealed predictions
+
+`/predict 7d $LOCKRA hits 300K market cap` in a private chat seals the prediction with the same timelock encryption as any capsule. The bot posts a sealed announcement in the group (`PREDICT_CHAT_IDS`, or the alert chats by default) and, when the time comes, replies to that announcement with the revealed text. Nobody can read or change a prediction early, not even its author.
+
+Pending predictions are kept in a small JSON file (`PREDICTIONS_FILE`, default `data/predictions.json`). On Railway, add a volume and point `PREDICTIONS_FILE` into it so pending reveals survive redeploys. If the file is lost, nothing breaks: anyone can reply `/open` to an announcement to open it.
+
 ## Buy and burn alerts
 
 The bot can post every $LOCKRA buy and burn to your groups, read straight from Robinhood Chain over RPC. No third-party buy bot, no ads, no API keys.
@@ -80,6 +87,8 @@ Turn it on:
 | `RAFFLE_START`, `RAFFLE_END` | No | Campaign window (ISO dates, UTC) for `/raffle`. Defaults to the FOBO × LOCKRA raffle. |
 | `RAFFLE_PRIZE`, `RAFFLE_MAX_TICKETS` | No | Prize text and tickets per wallet for `/raffle`. |
 | `POOL_ADDRESSES` | No | Only count buys from these pool addresses, comma separated. |
+| `PREDICT_CHAT_IDS` | No | Chats where predictions are announced and revealed. Defaults to `ALERT_CHAT_IDS`. |
+| `PREDICTIONS_FILE` | No | Where pending predictions are stored. Default `data/predictions.json`. |
 | `TOKEN_ADDRESS`, `RPC_URL`, `EXPLORER_URL` | No | Default to $LOCKRA on Robinhood Chain. |
 
 ## Tests
