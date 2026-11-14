@@ -125,12 +125,14 @@ export function formatCompact(n) {
  * Build the alert text (HTML) for a buy.
  * `before` is the buyer's token balance before this buy (units), when known.
  */
-export function buyMessage({ ev, symbol, decimals, quoteSymbol, quoteDecimals, quoteUsd, supply, links, emoji = '🟢', step = 10, before = null, marketCap = null, usdEstimate = null }) {
+export function buyMessage({ ev, symbol, decimals, quoteSymbol, quoteDecimals, quoteUsd, supply, links, emoji = '🟢', step = 10, before = null, marketCap = null, usdEstimate = null, usdOverride = null }) {
   const got = Number(ev.amount) / 10 ** decimals;
   const paid = ev.quote ? Number(ev.quote.value) / 10 ** quoteDecimals : null;
-  const exact = paid != null && quoteUsd ? paid * quoteUsd : null;
+  // usdOverride: the buy's value read from the pool on-chain, used when the visible payment leg is only
+  // part of the route (multi-pool swaps) and would understate it.
+  const exact = usdOverride == null && paid != null && quoteUsd ? paid * quoteUsd : null;
   // Paid in a token we cannot price (e.g. another launchpad coin): value it at the market price instead.
-  const usd = exact ?? usdEstimate;
+  const usd = exact ?? usdOverride ?? usdEstimate;
   // Market cap from the market (DexScreener) when available. Deriving it from one buy's average price
   // overstates it: that price includes slippage, fees and multi-hop routes.
   const mc = marketCap || (usd && got && supply ? (usd / got) * (Number(supply) / 10 ** decimals) : null);
@@ -140,7 +142,7 @@ export function buyMessage({ ev, symbol, decimals, quoteSymbol, quoteDecimals, q
     `<b>$${esc(symbol)} Buy!</b>`,
     usd != null ? emoji.repeat(strength(usd, step)) : emoji,
     '',
-    paid != null ? `↗ ${formatUnits(ev.quote.value, quoteDecimals)} ${esc(quoteSymbol)}${exact != null ? ` (${formatUsd(exact)})` : usd != null ? ` (~${formatUsd(usd)})` : ''}` : null,
+    usdOverride != null ? `↗ ${formatUsd(usdOverride)}` : paid != null ? `↗ ${formatUnits(ev.quote.value, quoteDecimals)} ${esc(quoteSymbol)}${exact != null ? ` (${formatUsd(exact)})` : usd != null ? ` (~${formatUsd(usd)})` : ''}` : null,
     `↙ ${formatCompact(got)} $${esc(symbol)}`,
     '',
     `👤 <a href="${links.explorer}/address/${ev.buyer}">${short(ev.buyer)}</a>`,
@@ -237,6 +239,22 @@ export function createAlerts(o) {
           const price = await o.tokenPrice().catch(() => null);
           if (price) usd = usdEstimate = (Number(ev.amount) / 10 ** decimals) * price;
         }
+        // Read the token's price from the main pool, right before and right after this block. The buy's
+        // value is tokens x average of the two (independent of how the swap was routed), and the market
+        // cap is the price after the buy x circulating supply. Falls back to the leg/DexScreener values.
+        let usdOverride = null;
+        let mcOnchain = null;
+        if (o.poolPrice && receipt.blockNumber) {
+          const blk = Number(BigInt(receipt.blockNumber));
+          const [pBefore, pAfter] = await Promise.all([o.poolPrice(blk - 1), o.poolPrice(blk)]).catch(() => [null, null]);
+          if (pAfter) {
+            mcOnchain = pAfter * (Number(circulating) / 10 ** decimals);
+            const onchainUsd = (Number(ev.amount) / 10 ** decimals) * ((pBefore || pAfter) + pAfter) / 2;
+            // Trust the payment leg only when it matches the pool within a margin; otherwise it was
+            // a partial leg of a split route (or a relayed amount counted twice).
+            if (usd == null || usd < onchainUsd * 0.6 || usd > onchainUsd * 1.6) { usd = onchainUsd; usdOverride = onchainUsd; usdEstimate = null; }
+          }
+        }
         if (usd != null && ev.amount > 0n) lastPrice = usd / (Number(ev.amount) / 10 ** decimals);
         if (usd == null) log(`tx ${ev.tx}: no dollar value for ${formatUnits(ev.quote?.value ?? 0n, q.decimals)} ${q.symbol || '?'}`);
         // With a minimum set, a buy whose dollar value is unknown is skipped rather than guessed.
@@ -244,10 +262,13 @@ export function createAlerts(o) {
         // Balance right after the buy, read at its block; minus the buy gives the balance before.
         const after = await o.rpc('eth_call', [{ to: o.token, data: '0x70a08231' + ev.buyer.slice(2).padStart(64, '0') }, receipt.blockNumber || 'latest']).then(BigInt).catch(() => null);
         const before = after != null && after >= ev.amount ? after - ev.amount : null;
-        // DexScreener lags the chain by a few seconds: wait so the market cap includes this buy.
-        if (o.marketCap && o.marketCapDelayMs) await new Promise((r) => setTimeout(r, o.marketCapDelayMs));
-        const marketCap = o.marketCap ? await o.marketCap().catch(() => null) : null;
-        html = buyMessage({ ev, symbol, decimals, quoteSymbol: q.symbol, quoteDecimals: q.decimals, quoteUsd, supply: circulating, links: { explorer: o.explorer }, emoji: o.emoji, step: o.step, before, marketCap, usdEstimate });
+        let marketCap = mcOnchain;
+        if (marketCap == null && o.marketCap) {
+          // DexScreener lags the chain by a few seconds: wait so the market cap includes this buy.
+          if (o.marketCapDelayMs) await new Promise((r) => setTimeout(r, o.marketCapDelayMs));
+          marketCap = await o.marketCap().catch(() => null);
+        }
+        html = buyMessage({ ev, symbol, decimals, quoteSymbol: q.symbol, quoteDecimals: q.decimals, quoteUsd, supply: circulating, links: { explorer: o.explorer }, emoji: o.emoji, step: o.step, before, marketCap, usdEstimate, usdOverride });
       } else {
         if (!o.burns) continue;
         html = burnMessage({ ev, symbol, decimals, links: { explorer: o.explorer }, ticketSize: o.ticketSize });
@@ -335,15 +356,63 @@ export function createMarket(token, doFetch = globalThis.fetch, { maxAgeMs = 5_0
     const r = await doFetch(`https://api.dexscreener.com/latest/dex/tokens/${token}`, { headers: { accept: 'application/json' }, signal: AbortSignal.timeout(10_000) });
     if (!r.ok) throw new Error(`dexscreener ${r.status}`);
     const pair = ((await r.json()).pairs || []).sort((a, b) => (b.liquidity?.usd || 0) - (a.liquidity?.usd || 0))[0];
-    const v = { marketCap: Number(pair?.marketCap) || Number(pair?.fdv) || null, priceUsd: Number(pair?.priceUsd) || null };
+    const v = { marketCap: Number(pair?.marketCap) || Number(pair?.fdv) || null, priceUsd: Number(pair?.priceUsd) || null, pair: pair ? { pairAddress: pair.pairAddress, quoteSymbol: pair.quoteToken?.symbol } : null };
     cache = { at: Date.now(), v };
     return v;
   };
-  return { marketCap: async () => (await load()).marketCap, price: async () => (await load()).priceUsd };
+  return { marketCap: async () => (await load()).marketCap, price: async () => (await load()).priceUsd, pair: async () => (await load()).pair };
 }
 
 /** @deprecated use createMarket(token).marketCap */
 export const createMarketCap = (token, doFetch) => createMarket(token, doFetch).marketCap;
+
+/**
+ * Price of `token` in USD read from a Uniswap v3-style (slot0) or v2-style (getReserves) pool at a
+ * given block. The pool is found once from DexScreener (deepest pair) and then read on-chain.
+ * Returns null when the pool cannot be read (e.g. a v4 singleton), so callers fall back.
+ */
+export function createPoolPrice({ rpc, token, findPair, quoteUsd, decimals = 18 }) {
+  const t = token.toLowerCase();
+  let pool = null; let poolAt = 0;
+  const call = (to, data, block) => rpc('eth_call', [{ to, data }, typeof block === 'number' ? '0x' + block.toString(16) : block]);
+  const addr = (h) => '0x' + h.slice(-40).toLowerCase();
+  async function info() {
+    if (pool && Date.now() - poolAt < 10 * 60_000) return pool;
+    const pair = await findPair();
+    if (!pair?.pairAddress || !/^0x[0-9a-fA-F]{40}$/.test(pair.pairAddress)) return (pool = null);
+    const p = pair.pairAddress.toLowerCase();
+    const token0 = addr(await call(p, '0x0dfe1681', 'latest'));
+    const token1 = addr(await call(p, '0xd21220a7', 'latest'));
+    if (token0 !== t && token1 !== t) return (pool = null);
+    const quote = token0 === t ? token1 : token0;
+    const qd = Number(BigInt(await call(quote, '0x313ce567', 'latest')));
+    let kind = 'v3';
+    try { await call(p, '0x3850c7bd', 'latest'); } catch { kind = 'v2'; }
+    pool = { address: p, tokenIs0: token0 === t, quote, quoteDecimals: qd, kind };
+    poolAt = Date.now();
+    return pool;
+  }
+  return async (block) => {
+    const pl = await info();
+    if (!pl) return null;
+    let quotePerToken; // human units of quote per 1 token
+    if (pl.kind === 'v3') {
+      const sqrt = BigInt('0x' + (await call(pl.address, '0x3850c7bd', block)).slice(2, 66));
+      if (sqrt === 0n) return null;
+      const raw = Number(sqrt) ** 2 / 2 ** 192; // token1 per token0, raw units
+      const p10 = raw * 10 ** ((pl.tokenIs0 ? decimals : pl.quoteDecimals) - (pl.tokenIs0 ? pl.quoteDecimals : decimals));
+      quotePerToken = pl.tokenIs0 ? p10 : 1 / p10;
+    } else {
+      const h = (await call(pl.address, '0x0902f1ac', block)).slice(2);
+      const r0 = BigInt('0x' + h.slice(0, 64)); const r1 = BigInt('0x' + h.slice(64, 128));
+      const [rt, rq] = pl.tokenIs0 ? [r0, r1] : [r1, r0];
+      if (rt === 0n) return null;
+      quotePerToken = (Number(rq) / 10 ** pl.quoteDecimals) / (Number(rt) / 10 ** decimals);
+    }
+    const usd = await quoteUsd(pl.quote);
+    return usd && Number.isFinite(quotePerToken) ? quotePerToken * usd : null;
+  };
+}
 
 /**
  * ETH price in USD, cached for a minute. DexScreener first (it gives the token price in USD and in

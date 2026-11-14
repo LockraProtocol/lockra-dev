@@ -380,3 +380,76 @@ test('a buy paid in an unpriced token is valued at the market price', async () =
   assert.match(sent[0], /↗ 325,409 FLORA \(~\$74\.73\)/);
   assert.match(sent[0], /Market cap \$100,000/);
 });
+
+describe('on-chain pool price', () => {
+  const W = (n) => BigInt(n).toString(16).padStart(64, '0');
+  const POOLA = '0x1234567890123456789012345678901234567890';
+  const pair = async () => ({ pairAddress: POOLA });
+
+  test('v2 pool: reserves give the price, token as token1', async () => {
+    const { createPoolPrice } = await import('../src/alerts.js');
+    const rpc = async (m, [{ to, data }, block]) => {
+      if (data === '0x0dfe1681') return '0x' + W(BigInt(WETH));
+      if (data === '0xd21220a7') return '0x' + W(BigInt(TOKEN));
+      if (data === '0x313ce567') return '0x' + W(18);
+      if (data === '0x3850c7bd') throw new Error('revert');
+      if (data === '0x0902f1ac') return '0x' + W(50n * E18) + W(1_000_000_000n * E18) + W(0); // 50 WETH : 1B token
+    };
+    const price = createPoolPrice({ rpc, token: TOKEN, findPair: pair, quoteUsd: async () => 2000 });
+    assert.ok(Math.abs((await price(10)) - 0.0001) < 1e-12); // 50/1e9 ETH = 5e-8 ETH x 2000
+  });
+
+  test('v3 pool: sqrtPriceX96 gives the price, token as token0', async () => {
+    const { createPoolPrice } = await import('../src/alerts.js');
+    const USDG6 = '0x5555555555555555555555555555555555555555';
+    // price = 0.00013 USDG per token; raw token1/token0 = 0.00013 * 1e6 / 1e18
+    const raw = 0.00013 * 1e6 / 1e18;
+    const sqrt = BigInt(Math.round(Math.sqrt(raw) * 2 ** 96));
+    const rpc = async (m, [{ to, data }]) => {
+      if (data === '0x0dfe1681') return '0x' + W(BigInt(TOKEN));
+      if (data === '0xd21220a7') return '0x' + W(BigInt(USDG6));
+      if (data === '0x313ce567') return '0x' + W(6);
+      if (data === '0x3850c7bd') return '0x' + W(sqrt) + W(0).repeat(6);
+    };
+    const price = createPoolPrice({ rpc, token: TOKEN, findPair: pair, quoteUsd: async () => 1 });
+    const p = await price(10);
+    assert.ok(Math.abs(p - 0.00013) / 0.00013 < 1e-6, String(p));
+  });
+
+  test('a split-route buy is valued from the pool, and the market cap too', async () => {
+    let head = 1; const logs = []; const receipts = {};
+    const str = (x) => '0x' + '20'.padStart(64, '0') + x.length.toString(16).padStart(64, '0') + Buffer.from(x).toString('hex').padEnd(64, '0');
+    const rpc = async (m, p) => {
+      if (m === 'eth_blockNumber') return '0x' + head.toString(16);
+      if (m === 'eth_getLogs') return logs.filter((l) => l.block >= parseInt(p[0].fromBlock, 16) && l.block <= parseInt(p[0].toBlock, 16));
+      if (m === 'eth_getTransactionReceipt') return receipts[p[0]];
+      if (m === 'eth_getCode') return [POOL, ROUTER].includes(p[0]) ? '0x60' : '0x';
+      if (m === 'eth_call') {
+        if (p[0].data === '0x313ce567') return '0x12';
+        if (p[0].data === '0x95d89b41') return str(p[0].to === WETH ? 'WETH' : 'LOCKRA');
+        if (p[0].data === '0x18160ddd') return '0x' + (1_000_000_000n * E18).toString(16);
+        return '0x0';
+      }
+    };
+    const sent = [];
+    const poolPrice = async (b) => (b === 2 ? 0.00014 : 0.00012); // after / before
+    const alerts = createAlerts({ rpc, send: async (c, html) => sent.push(html), chats: ['-1'], token: TOKEN, explorer: 'https://x', ethUsd: async () => 1826, minUsd: 50, poolPrice });
+    await alerts.tick();
+    head = 2;
+    // Only one leg visible: 0.05272 WETH (~$96) for 7.4M tokens; the real value is ~$960.
+    const tl = [tr(WETH, ROUTER, POOL, 52_720_000_000_000_000n), tr(TOKEN, POOL, BUYER, 7_400_000n * E18)];
+    tl.forEach((l) => { l.block = 2; l.transactionHash = '0xsplit'; logs.push(l); });
+    receipts['0xsplit'] = { status: '0x1', from: BUYER, blockNumber: '0x2', logs: tl };
+    await alerts.tick();
+    assert.equal(sent.length, 1);
+    assert.match(sent[0], /↗ \$962\.00/); // 7.4M x 0.00013
+    assert.match(sent[0], /Market cap \$140,000/); // 0.00014 x 1B
+  });
+
+  test('a payment that matches the pool keeps the exact amount', async () => {
+    const { buyMessage } = await import('../src/alerts.js');
+    const ev = { buyer: BUYER, tx: '0x1', amount: 1_000_000n * E18, quote: { token: WETH, value: E18 / 10n } };
+    const html = buyMessage({ ev, symbol: 'LOCKRA', decimals: 18, quoteSymbol: 'WETH', quoteDecimals: 18, quoteUsd: 1300, links: { explorer: 'https://x' }, marketCap: 130_000 });
+    assert.match(html, /↗ 0\.1 WETH \(\$130\.00\)/);
+  });
+});
