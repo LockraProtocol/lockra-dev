@@ -324,3 +324,13 @@ test('two legs to the same buyer in one swap are one buy with the total', () => 
   assert.equal(buys[0].amount, 1_020_300n * E18);
   assert.equal(buys[0].quote.value, 2n * E18);
 });
+
+test('market cap comes from the market, not from one buy', async () => {
+  const { buyMessage, createMarketCap } = await import('../src/alerts.js');
+  const ev = { buyer: BUYER, tx: '0x1', amount: 498_000n * E18, quote: { token: WETH, value: 204n * 10n ** 18n } };
+  const base = { ev, symbol: 'LOCKRA', decimals: 18, quoteSymbol: 'USDG', quoteDecimals: 18, quoteUsd: 1, supply: 995_000_000n * E18, links: { explorer: 'https://x' } };
+  assert.match(buyMessage(base), /Market cap \$407/);
+  assert.match(buyMessage({ ...base, marketCap: 148_870 }), /Market cap \$148,870/);
+  const mc = createMarketCap(TOKEN, async () => ({ ok: true, json: async () => ({ pairs: [{ marketCap: 148870, liquidity: { usd: 1 } }, { marketCap: 9, liquidity: { usd: 0 } }] }) }));
+  assert.equal(await mc(), 148870);
+});
