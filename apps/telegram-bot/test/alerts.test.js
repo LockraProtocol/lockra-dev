@@ -351,3 +351,32 @@ test('with a relayer signing, the buyer\'s own spend counts', () => {
   const [ev] = classify(logs, { token: TOKEN, contracts: new Set([ROUTER, POOL]), signer: RELAYER }).filter((e) => e.type === 'buy');
   assert.equal(ev.quote.value, 68n);
 });
+
+test('a buy paid in an unpriced token is valued at the market price', async () => {
+  const FLORA = '0xf10a000000000000000000000000000000000001';
+  let head = 1; const logs = []; const receipts = {};
+  const str = (x) => '0x' + '20'.padStart(64, '0') + x.length.toString(16).padStart(64, '0') + Buffer.from(x).toString('hex').padEnd(64, '0');
+  const rpc = async (m, p) => {
+    if (m === 'eth_blockNumber') return '0x' + head.toString(16);
+    if (m === 'eth_getLogs') return logs.filter((l) => l.block >= parseInt(p[0].fromBlock, 16) && l.block <= parseInt(p[0].toBlock, 16));
+    if (m === 'eth_getTransactionReceipt') return receipts[p[0]];
+    if (m === 'eth_getCode') return p[0] === POOL ? '0x60' : '0x';
+    if (m === 'eth_call') {
+      if (p[0].data === '0x313ce567') return '0x12';
+      if (p[0].data === '0x95d89b41') return str(p[0].to === FLORA ? 'FLORA' : 'LOCKRA');
+      if (p[0].data === '0x18160ddd') return '0x' + (10n ** 27n).toString(16);
+      return '0x0';
+    }
+  };
+  const sent = [];
+  const alerts = createAlerts({ rpc, send: async (c, html) => sent.push(html), chats: ['-1'], token: TOKEN, explorer: 'https://x', minUsd: 50, tokenPrice: async () => 0.0001, marketCap: async () => 100_000 });
+  await alerts.tick();
+  head++;
+  const tl = [tr(FLORA, BUYER, POOL, 325_409n * E18), tr(TOKEN, POOL, BUYER, 747_303n * E18)];
+  tl.forEach((l) => { l.block = head; l.transactionHash = '0xflora'; logs.push(l); });
+  receipts['0xflora'] = { status: '0x1', from: BUYER, logs: tl };
+  await alerts.tick();
+  assert.equal(sent.length, 1);
+  assert.match(sent[0], /↗ 325,409 FLORA \(~\$74\.73\)/);
+  assert.match(sent[0], /Market cap \$100,000/);
+});
