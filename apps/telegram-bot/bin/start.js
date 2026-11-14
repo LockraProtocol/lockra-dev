@@ -3,7 +3,7 @@
 
 import { createTelegram } from '../src/telegram.js';
 import { createBot, COMMANDS } from '../src/bot.js';
-import { createAlerts, createRpc, createEthPrice } from '../src/alerts.js';
+import { createAlerts, createRpc, createEthPrice, createMarketCap } from '../src/alerts.js';
 import { createInfo } from '../src/info.js';
 
 const log = (msg) => console.log(`[lockra-bot] ${new Date().toISOString()} ${msg}`);
@@ -61,6 +61,7 @@ if (chats.length) {
     pools: (process.env.POOL_ADDRESSES || '').split(',').map((s) => s.trim()).filter(Boolean),
     explorer,
     ethUsd: createEthPrice(explorer, fetch, tokenAddress),
+    marketCap: createMarketCap(tokenAddress),
     minUsd: Number(process.env.ALERT_MIN_USD || 0),
     step: Number(process.env.ALERT_STEP_USD || 10),
     // A Telegram custom (animated) emoji, if ALERT_EMOJI_ID is set; ALERT_EMOJI is shown where it is not supported.

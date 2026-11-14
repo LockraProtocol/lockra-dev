@@ -77,6 +77,18 @@ export function classify(logs, { token, pools = [], contracts = null, signer = n
   // One swap is one buy. A pool or router can split its output (a fee or referral cut to another
   // address, then the rest to the buyer); keep only the main recipient: the signer if it is one of
   // them, otherwise the largest amount.
+  // What was paid is what the signer actually spent. Routers and aggregators forward the same funds
+  // through several contracts, so the transfer into the last pool alone (or a sum over hops) can be
+  // wrong: e.g. 68 USDG relayed through three contracts must not read as 204 USDG.
+  for (const e of events) {
+    if (e.type !== 'buy' || !e.quote) continue;
+    // The signer, else the buyer; with relayers the funds can come from the buyer's own wallet.
+    for (const who of [signer?.toLowerCase(), e.buyer]) {
+      if (!who) continue;
+      const spent = -transfers.reduce((d, y) => (y.token !== e.quote.token ? d : d + (y.to === who ? y.value : 0n) - (y.from === who ? y.value : 0n)), 0n);
+      if (spent > 0n) { e.quote = { token: e.quote.token, value: spent }; break; }
+    }
+  }
   const buys = events.filter((e) => e.type === 'buy');
   if (buys.length > 1) {
     const me = signer?.toLowerCase();
@@ -85,10 +97,6 @@ export function classify(logs, { token, pools = [], contracts = null, signer = n
     // The amount is what the buyer really ended up with in this transaction, not one leg of it.
     const net = transfers.reduce((d, y) => (y.token !== t ? d : d + (y.to === main.buyer ? y.value : 0n) - (y.from === main.buyer ? y.value : 0n)), 0n);
     if (net > 0n) main.amount = net;
-    // A route through several pools pays each of them: add up what the buyer paid, once per pool.
-    const paidPools = new Map();
-    for (const b of buys) if (b.quote && main.quote && b.quote.token === main.quote.token && b.pool) paidPools.set(b.pool, b.quote.value);
-    if (paidPools.size > 1) main.quote = { token: main.quote.token, value: [...paidPools.values()].reduce((a, v) => a + v, 0n) };
     return events.filter((e) => e.type !== 'buy' || e === main);
   }
   return events;
@@ -117,11 +125,13 @@ export function formatCompact(n) {
  * Build the alert text (HTML) for a buy.
  * `before` is the buyer's token balance before this buy (units), when known.
  */
-export function buyMessage({ ev, symbol, decimals, quoteSymbol, quoteDecimals, quoteUsd, supply, links, emoji = '🟢', step = 10, before = null }) {
+export function buyMessage({ ev, symbol, decimals, quoteSymbol, quoteDecimals, quoteUsd, supply, links, emoji = '🟢', step = 10, before = null, marketCap = null }) {
   const got = Number(ev.amount) / 10 ** decimals;
   const paid = ev.quote ? Number(ev.quote.value) / 10 ** quoteDecimals : null;
   const usd = paid != null && quoteUsd ? paid * quoteUsd : null;
-  const mc = usd && got && supply ? (usd / got) * (Number(supply) / 10 ** decimals) : null;
+  // Market cap from the market (DexScreener) when available. Deriving it from one buy's average price
+  // overstates it: that price includes slippage, fees and multi-hop routes.
+  const mc = marketCap || (usd && got && supply ? (usd / got) * (Number(supply) / 10 ** decimals) : null);
   // A previous balance under 1% of this buy is dust: call it a new holder rather than "+50,000%".
   const position = before == null ? null : before * 100n < ev.amount ? '🆕 New holder' : `📈 Position +${formatCompact((Number(ev.amount) / Number(before)) * 100)}%`;
   const lines = [
@@ -227,7 +237,8 @@ export function createAlerts(o) {
         // Balance right after the buy, read at its block; minus the buy gives the balance before.
         const after = await o.rpc('eth_call', [{ to: o.token, data: '0x70a08231' + ev.buyer.slice(2).padStart(64, '0') }, receipt.blockNumber || 'latest']).then(BigInt).catch(() => null);
         const before = after != null && after >= ev.amount ? after - ev.amount : null;
-        html = buyMessage({ ev, symbol, decimals, quoteSymbol: q.symbol, quoteDecimals: q.decimals, quoteUsd, supply: circulating, links: { explorer: o.explorer }, emoji: o.emoji, step: o.step, before });
+        const marketCap = o.marketCap ? await o.marketCap().catch(() => null) : null;
+        html = buyMessage({ ev, symbol, decimals, quoteSymbol: q.symbol, quoteDecimals: q.decimals, quoteUsd, supply: circulating, links: { explorer: o.explorer }, emoji: o.emoji, step: o.step, before, marketCap });
       } else {
         if (!o.burns) continue;
         html = burnMessage({ ev, symbol, decimals, links: { explorer: o.explorer }, ticketSize: o.ticketSize });
@@ -304,6 +315,20 @@ export function createRpc(url, doFetch = globalThis.fetch, { retries = 4, wait =
       if (!retryable || attempt >= retries) throw new Error(`${method}: ${body.error.message}`);
       await wait(1000 * 2 ** attempt);
     }
+  };
+}
+
+/** The token's market cap from DexScreener (deepest pair), cached for 30 seconds. */
+export function createMarketCap(token, doFetch = globalThis.fetch) {
+  let cache = { at: 0, v: null };
+  return async () => {
+    if (Date.now() - cache.at < 30_000 && cache.v) return cache.v;
+    const r = await doFetch(`https://api.dexscreener.com/latest/dex/tokens/${token}`, { headers: { accept: 'application/json' }, signal: AbortSignal.timeout(10_000) });
+    if (!r.ok) throw new Error(`dexscreener ${r.status}`);
+    const pair = ((await r.json()).pairs || []).sort((a, b) => (b.liquidity?.usd || 0) - (a.liquidity?.usd || 0))[0];
+    const v = Number(pair?.marketCap) || Number(pair?.fdv) || null;
+    cache = { at: Date.now(), v };
+    return v;
   };
 }
 

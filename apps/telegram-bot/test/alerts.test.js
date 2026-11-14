@@ -322,5 +322,32 @@ test('two legs to the same buyer in one swap are one buy with the total', () => 
   const buys = classify(logs, { token: TOKEN, contracts: new Set([POOL, POOL2, ROUTER]), signer: BUYER }).filter((e) => e.type === 'buy');
   assert.equal(buys.length, 1);
   assert.equal(buys[0].amount, 1_020_300n * E18);
-  assert.equal(buys[0].quote.value, 2n * E18);
+});
+
+test('market cap comes from the market, not from one buy', async () => {
+  const { buyMessage, createMarketCap } = await import('../src/alerts.js');
+  const ev = { buyer: BUYER, tx: '0x1', amount: 498_000n * E18, quote: { token: WETH, value: 204n * 10n ** 18n } };
+  const base = { ev, symbol: 'LOCKRA', decimals: 18, quoteSymbol: 'USDG', quoteDecimals: 18, quoteUsd: 1, supply: 995_000_000n * E18, links: { explorer: 'https://x' } };
+  assert.match(buyMessage(base), /Market cap \$407/);
+  assert.match(buyMessage({ ...base, marketCap: 148_870 }), /Market cap \$148,870/);
+  const mc = createMarketCap(TOKEN, async () => ({ ok: true, json: async () => ({ pairs: [{ marketCap: 148870, liquidity: { usd: 1 } }, { marketCap: 9, liquidity: { usd: 0 } }] }) }));
+  assert.equal(await mc(), 148870);
+});
+
+test('paid is what the signer spent, not the same funds counted at each hop', () => {
+  const RELAY = '0x9999999999999999999999999999999999999999';
+  const USDG = '0x5555555555555555555555555555555555555555';
+  const v = 67_979_525n; // 67.98 USDG (6 decimals)
+  const logs = [tr(USDG, BUYER, RELAY, v), tr(USDG, RELAY, ROUTER, v), tr(USDG, ROUTER, POOL, v), tr(TOKEN, POOL, BUYER, 498_000n * E18)];
+  const [ev] = classify(logs, { token: TOKEN, contracts: new Set([RELAY, ROUTER, POOL]), signer: BUYER }).filter((e) => e.type === 'buy');
+  assert.equal(ev.quote.value, v);
+  assert.equal(ev.amount, 498_000n * E18);
+});
+
+test('with a relayer signing, the buyer\'s own spend counts', () => {
+  const RELAYER = '0xaaaa000000000000000000000000000000000001';
+  const USDG = '0x5555555555555555555555555555555555555555';
+  const logs = [tr(USDG, BUYER, ROUTER, 68n), tr(USDG, ROUTER, POOL, 68n), tr(TOKEN, POOL, BUYER, 498n * E18)];
+  const [ev] = classify(logs, { token: TOKEN, contracts: new Set([ROUTER, POOL]), signer: RELAYER }).filter((e) => e.type === 'buy');
+  assert.equal(ev.quote.value, 68n);
 });
