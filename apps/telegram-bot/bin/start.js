@@ -120,3 +120,6 @@ const bot = createBot({ call: telegram.call, username: me.username, log, info, p
 log(`@${me.username} is running`);
 await telegram.poll(bot.handleUpdate, { signal: controller.signal, log });
 log('stopped');
+// Background loops (alerts, predictions) may still be waiting on the network: exit now so the host
+// sees a clean stop instead of killing the process.
+process.exit(0);
