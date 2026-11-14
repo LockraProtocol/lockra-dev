@@ -14,6 +14,8 @@ export const NATIVE = 'native';
 /** Dollar stablecoins, valued 1:1 (USDG is common on Robinhood Chain). */
 export const STABLE = /^(USDG|USDC(\.E)?|USDT0?|USD₮0?|DAI|USDS|USDE|PYUSD|FDUSD)$/i;
 
+import { findV4Trade, priceFromSqrt, FOBO_POOL_MANAGER, FOBO_SYSTEM } from './v4.js';
+
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 const topicAddr = (t) => '0x' + t.slice(-40).toLowerCase();
 const short = (a) => `${a.slice(0, 6)}…${a.slice(-4)}`;
@@ -188,6 +190,7 @@ export function createAlerts(o) {
   const seen = new Set();
   const codeCache = new Map();
   let lastPrice = null; // USD per token from the latest buy
+  let v4PoolId = o.poolId ? o.poolId.toLowerCase() : null;
 
   const call = (to, data) => o.rpc('eth_call', [{ to, data }, 'latest']);
   async function tokenMeta(addr) {
@@ -213,10 +216,22 @@ export function createAlerts(o) {
       for (const a of senders) if (!codeCache.has(a)) codeCache.set(a, ((await o.rpc('eth_getCode', [a, 'latest'])) || '0x').length > 2);
       for (const a of senders) if (codeCache.get(a)) contracts.add(a);
     }
-    const events = classify(receipt.logs, { token: o.token, pools: o.pools, contracts, signer: receipt.from });
+    let events = classify(receipt.logs, { token: o.token, pools: o.pools, contracts, signer: receipt.from });
+    // Trades through the FOBO pool are read from the PoolManager's own Swap event: that is the
+    // authority for direction, amounts and price, whatever wallet, router or aggregator was used.
+    const v4 = findV4Trade(receipt.logs, { token: o.token, poolManager: o.poolManager || FOBO_POOL_MANAGER, poolId: v4PoolId });
+    if (!v4 && receipt.logs.some((l) => l?.topics?.[0] === V4_SWAP && String(l.address).toLowerCase() === (o.poolManager || FOBO_POOL_MANAGER).toLowerCase())
+      && netChange(receipt.logs, t, (o.poolManager || FOBO_POOL_MANAGER).toLowerCase()) !== 0n) log(`tx ${hash}: LOCKRA moved through the PoolManager but no matching swap was found`);
+    if (v4) {
+      if (!v4PoolId) { v4PoolId = v4.poolId; log(`FOBO pool id ${v4PoolId}`); }
+      events = events.filter((e) => e.type !== 'buy');
+      if (v4.side === 'buy' && v4.buyer && v4.buyer !== DEAD && !FOBO_SYSTEM.has(v4.buyer)) {
+        events.unshift({ type: 'buy', buyer: v4.buyer, pool: null, amount: v4.amount, tx: hash, quote: { token: v4.quoteToken, value: v4.quoteAmount }, v4 });
+      }
+    }
     // Buys paid in native ETH (Uniswap v4-style pools, launchpad markets) move no ERC-20 to the pool,
     // so their shape is not visible in the logs. The signer gaining tokens while sending ETH is a buy.
-    if (!events.some((e) => e.type === 'buy') && receipt.from) {
+    if (!v4 && !events.some((e) => e.type === 'buy') && receipt.from) {
       const me = receipt.from.toLowerCase();
       const gained = netChange(receipt.logs, t, me);
       const fromContract = receipt.logs.map(decodeTransfer).some((x) => x && x.token === t && x.to === me && contracts?.has(x.from));
@@ -249,7 +264,14 @@ export function createAlerts(o) {
         // cap is the price after the buy x circulating supply. Falls back to the leg/DexScreener values.
         let usdOverride = null;
         let mcOnchain = null;
-        if (o.poolPrice && receipt.blockNumber) {
+        if (ev.v4) {
+          // Exact: paid = the swap's quote side; market cap = price after the swap x circulating supply.
+          const priceQ = priceFromSqrt(ev.v4.sqrtPriceX96, ev.v4.tokenIs0, decimals, q.decimals);
+          usd = quoteUsd ? (Number(ev.quote.value) / 10 ** q.decimals) * quoteUsd : null;
+          usdEstimate = null;
+          if (priceQ && quoteUsd) mcOnchain = priceQ * quoteUsd * (Number(circulating) / 10 ** decimals);
+          if (usd == null && priceQ && quoteUsd == null) log(`tx ${ev.tx}: quote ${ev.quote.token} has no USD price`);
+        } else if (o.poolPrice && receipt.blockNumber) {
           const blk = Number(BigInt(receipt.blockNumber));
           const [pBefore, pAfter] = await Promise.all([o.poolPrice(blk - 1), o.poolPrice(blk)]).catch(() => [null, null]);
           if (pAfter) {
