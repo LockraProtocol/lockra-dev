@@ -7,6 +7,8 @@
 export const TRANSFER = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef';
 export const DEAD = '0x000000000000000000000000000000000000dead';
 const ZERO = '0x0000000000000000000000000000000000000000';
+/** Uniswap v4 PoolManager Swap(bytes32,address,int128,int128,uint160,uint128,int24,uint24). */
+export const V4_SWAP = '0x40e9cecb9f5f1f1c5b9c97dec2917b7ee92e57ba5563708daca94dd84ad7112f';
 /** Marks a buy paid in the chain's native ETH. */
 export const NATIVE = 'native';
 /** Dollar stablecoins, valued 1:1 (USDG is common on Robinhood Chain). */
@@ -50,6 +52,8 @@ export function classify(logs, { token, pools = [], contracts = null, signer = n
   const t = token.toLowerCase();
   const trusted = new Set(pools.map((p) => p.toLowerCase()));
   const transfers = logs.map(decodeTransfer).filter(Boolean).sort((a, b) => a.logIndex - b.logIndex);
+  // Uniswap v4 singletons (PoolManager) seen swapping in this tx. Tokens flowing INTO one are a sell.
+  const managers = new Set(logs.filter((l) => l?.topics?.[0] === V4_SWAP).map((l) => String(l.address).toLowerCase()));
   const events = [];
   for (const x of transfers) {
     if (x.token !== t || x.value === 0n) continue;
@@ -58,13 +62,14 @@ export function classify(logs, { token, pools = [], contracts = null, signer = n
       continue;
     }
     // The sender must be a pool: a trusted one, or a contract that is paid another token in this tx.
-    const paid = transfers.find((y) => y.token !== t && y.to === x.from && y.value > 0n);
+    // A mint is not a payment (e.g. WETH wrapped by a router before a sell).
+    const paid = transfers.find((y) => y.token !== t && y.to === x.from && y.from !== ZERO && y.value > 0n);
     const isPool = trusted.size ? trusted.has(x.from) : !!paid && (!contracts || contracts.has(x.from));
     if (!isPool) continue;
     // Follow router hops to the wallet that ends up holding the tokens.
     let buyer = x.to;
     for (let at = x.logIndex, hop; (hop = transfers.find((y) => y.token === t && y.from === buyer && y.logIndex > at && y.to !== DEAD)); at = hop.logIndex) buyer = hop.to;
-    if (trusted.has(buyer) || (contracts && !trusted.size && buyer === x.from)) continue;
+    if (trusted.has(buyer) || managers.has(buyer) || (contracts && !trusted.size && buyer === x.from)) continue;
     events.push({ type: 'buy', buyer, pool: x.from, amount: x.value, tx: x.tx, quote: paid ? { token: paid.token, value: paid.value } : undefined });
   }
   // The wallet that signed the transaction tells buys from sells: if it ends up with fewer tokens,
