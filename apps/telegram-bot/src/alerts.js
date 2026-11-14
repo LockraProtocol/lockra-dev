@@ -77,6 +77,18 @@ export function classify(logs, { token, pools = [], contracts = null, signer = n
   // One swap is one buy. A pool or router can split its output (a fee or referral cut to another
   // address, then the rest to the buyer); keep only the main recipient: the signer if it is one of
   // them, otherwise the largest amount.
+  // What was paid is what the signer actually spent. Routers and aggregators forward the same funds
+  // through several contracts, so the transfer into the last pool alone (or a sum over hops) can be
+  // wrong: e.g. 68 USDG relayed through three contracts must not read as 204 USDG.
+  for (const e of events) {
+    if (e.type !== 'buy' || !e.quote) continue;
+    // The signer, else the buyer; with relayers the funds can come from the buyer's own wallet.
+    for (const who of [signer?.toLowerCase(), e.buyer]) {
+      if (!who) continue;
+      const spent = -transfers.reduce((d, y) => (y.token !== e.quote.token ? d : d + (y.to === who ? y.value : 0n) - (y.from === who ? y.value : 0n)), 0n);
+      if (spent > 0n) { e.quote = { token: e.quote.token, value: spent }; break; }
+    }
+  }
   const buys = events.filter((e) => e.type === 'buy');
   if (buys.length > 1) {
     const me = signer?.toLowerCase();
@@ -85,10 +97,6 @@ export function classify(logs, { token, pools = [], contracts = null, signer = n
     // The amount is what the buyer really ended up with in this transaction, not one leg of it.
     const net = transfers.reduce((d, y) => (y.token !== t ? d : d + (y.to === main.buyer ? y.value : 0n) - (y.from === main.buyer ? y.value : 0n)), 0n);
     if (net > 0n) main.amount = net;
-    // A route through several pools pays each of them: add up what the buyer paid, once per pool.
-    const paidPools = new Map();
-    for (const b of buys) if (b.quote && main.quote && b.quote.token === main.quote.token && b.pool) paidPools.set(b.pool, b.quote.value);
-    if (paidPools.size > 1) main.quote = { token: main.quote.token, value: [...paidPools.values()].reduce((a, v) => a + v, 0n) };
     return events.filter((e) => e.type !== 'buy' || e === main);
   }
   return events;
