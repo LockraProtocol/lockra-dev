@@ -7,10 +7,14 @@
 export const TRANSFER = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef';
 export const DEAD = '0x000000000000000000000000000000000000dead';
 const ZERO = '0x0000000000000000000000000000000000000000';
+/** Uniswap v4 PoolManager Swap(bytes32,address,int128,int128,uint160,uint128,int24,uint24). */
+export const V4_SWAP = '0x40e9cecb9f5f1f1c5b9c97dec2917b7ee92e57ba5563708daca94dd84ad7112f';
 /** Marks a buy paid in the chain's native ETH. */
 export const NATIVE = 'native';
 /** Dollar stablecoins, valued 1:1 (USDG is common on Robinhood Chain). */
 export const STABLE = /^(USDG|USDC(\.E)?|USDT0?|USD₮0?|DAI|USDS|USDE|PYUSD|FDUSD)$/i;
+
+import { findV4Trade, priceFromSqrt, FOBO_POOL_MANAGER, FOBO_SYSTEM } from './v4.js';
 
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 const topicAddr = (t) => '0x' + t.slice(-40).toLowerCase();
@@ -50,6 +54,8 @@ export function classify(logs, { token, pools = [], contracts = null, signer = n
   const t = token.toLowerCase();
   const trusted = new Set(pools.map((p) => p.toLowerCase()));
   const transfers = logs.map(decodeTransfer).filter(Boolean).sort((a, b) => a.logIndex - b.logIndex);
+  // Uniswap v4 singletons (PoolManager) seen swapping in this tx. Tokens flowing INTO one are a sell.
+  const managers = new Set(logs.filter((l) => l?.topics?.[0] === V4_SWAP).map((l) => String(l.address).toLowerCase()));
   const events = [];
   for (const x of transfers) {
     if (x.token !== t || x.value === 0n) continue;
@@ -58,13 +64,14 @@ export function classify(logs, { token, pools = [], contracts = null, signer = n
       continue;
     }
     // The sender must be a pool: a trusted one, or a contract that is paid another token in this tx.
-    const paid = transfers.find((y) => y.token !== t && y.to === x.from && y.value > 0n);
+    // A mint is not a payment (e.g. WETH wrapped by a router before a sell).
+    const paid = transfers.find((y) => y.token !== t && y.to === x.from && y.from !== ZERO && y.value > 0n);
     const isPool = trusted.size ? trusted.has(x.from) : !!paid && (!contracts || contracts.has(x.from));
     if (!isPool) continue;
     // Follow router hops to the wallet that ends up holding the tokens.
     let buyer = x.to;
     for (let at = x.logIndex, hop; (hop = transfers.find((y) => y.token === t && y.from === buyer && y.logIndex > at && y.to !== DEAD)); at = hop.logIndex) buyer = hop.to;
-    if (trusted.has(buyer) || (contracts && !trusted.size && buyer === x.from)) continue;
+    if (trusted.has(buyer) || managers.has(buyer) || (contracts && !trusted.size && buyer === x.from)) continue;
     events.push({ type: 'buy', buyer, pool: x.from, amount: x.value, tx: x.tx, quote: paid ? { token: paid.token, value: paid.value } : undefined });
   }
   // The wallet that signed the transaction tells buys from sells: if it ends up with fewer tokens,
@@ -183,6 +190,7 @@ export function createAlerts(o) {
   const seen = new Set();
   const codeCache = new Map();
   let lastPrice = null; // USD per token from the latest buy
+  let v4PoolId = o.poolId ? o.poolId.toLowerCase() : null;
 
   const call = (to, data) => o.rpc('eth_call', [{ to, data }, 'latest']);
   async function tokenMeta(addr) {
@@ -208,10 +216,22 @@ export function createAlerts(o) {
       for (const a of senders) if (!codeCache.has(a)) codeCache.set(a, ((await o.rpc('eth_getCode', [a, 'latest'])) || '0x').length > 2);
       for (const a of senders) if (codeCache.get(a)) contracts.add(a);
     }
-    const events = classify(receipt.logs, { token: o.token, pools: o.pools, contracts, signer: receipt.from });
+    let events = classify(receipt.logs, { token: o.token, pools: o.pools, contracts, signer: receipt.from });
+    // Trades through the FOBO pool are read from the PoolManager's own Swap event: that is the
+    // authority for direction, amounts and price, whatever wallet, router or aggregator was used.
+    const v4 = findV4Trade(receipt.logs, { token: o.token, poolManager: o.poolManager || FOBO_POOL_MANAGER, poolId: v4PoolId });
+    if (!v4 && receipt.logs.some((l) => l?.topics?.[0] === V4_SWAP && String(l.address).toLowerCase() === (o.poolManager || FOBO_POOL_MANAGER).toLowerCase())
+      && netChange(receipt.logs, t, (o.poolManager || FOBO_POOL_MANAGER).toLowerCase()) !== 0n) log(`tx ${hash}: LOCKRA moved through the PoolManager but no matching swap was found`);
+    if (v4) {
+      if (!v4PoolId) { v4PoolId = v4.poolId; log(`FOBO pool id ${v4PoolId}`); }
+      events = events.filter((e) => e.type !== 'buy');
+      if (v4.side === 'buy' && v4.buyer && v4.buyer !== DEAD && !FOBO_SYSTEM.has(v4.buyer)) {
+        events.unshift({ type: 'buy', buyer: v4.buyer, pool: null, amount: v4.amount, tx: hash, quote: { token: v4.quoteToken, value: v4.quoteAmount }, v4 });
+      }
+    }
     // Buys paid in native ETH (Uniswap v4-style pools, launchpad markets) move no ERC-20 to the pool,
     // so their shape is not visible in the logs. The signer gaining tokens while sending ETH is a buy.
-    if (!events.some((e) => e.type === 'buy') && receipt.from) {
+    if (!v4 && !events.some((e) => e.type === 'buy') && receipt.from) {
       const me = receipt.from.toLowerCase();
       const gained = netChange(receipt.logs, t, me);
       const fromContract = receipt.logs.map(decodeTransfer).some((x) => x && x.token === t && x.to === me && contracts?.has(x.from));
@@ -244,7 +264,14 @@ export function createAlerts(o) {
         // cap is the price after the buy x circulating supply. Falls back to the leg/DexScreener values.
         let usdOverride = null;
         let mcOnchain = null;
-        if (o.poolPrice && receipt.blockNumber) {
+        if (ev.v4) {
+          // Exact: paid = the swap's quote side; market cap = price after the swap x circulating supply.
+          const priceQ = priceFromSqrt(ev.v4.sqrtPriceX96, ev.v4.tokenIs0, decimals, q.decimals);
+          usd = quoteUsd ? (Number(ev.quote.value) / 10 ** q.decimals) * quoteUsd : null;
+          usdEstimate = null;
+          if (priceQ && quoteUsd) mcOnchain = priceQ * quoteUsd * (Number(circulating) / 10 ** decimals);
+          if (usd == null && priceQ && quoteUsd == null) log(`tx ${ev.tx}: quote ${ev.quote.token} has no USD price`);
+        } else if (o.poolPrice && receipt.blockNumber) {
           const blk = Number(BigInt(receipt.blockNumber));
           const [pBefore, pAfter] = await Promise.all([o.poolPrice(blk - 1), o.poolPrice(blk)]).catch(() => [null, null]);
           if (pAfter) {

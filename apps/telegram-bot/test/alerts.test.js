@@ -1,6 +1,6 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { classify, decodeTransfer, decodeString, buyMessage, burnMessage, formatUnits, createAlerts, TRANSFER, DEAD } from '../src/alerts.js';
+import { V4_SWAP as V4_SWAP_TOPIC, classify, decodeTransfer, decodeString, buyMessage, burnMessage, formatUnits, createAlerts, TRANSFER, DEAD } from '../src/alerts.js';
 
 const TOKEN = '0x2fc6de9c65a620f918ca7d1191d3afa495ca2898';
 const WETH = '0x4200000000000000000000000000000000000006';
@@ -452,4 +452,32 @@ describe('on-chain pool price', () => {
     const html = buyMessage({ ev, symbol: 'LOCKRA', decimals: 18, quoteSymbol: 'WETH', quoteDecimals: 18, quoteUsd: 1300, links: { explorer: 'https://x' }, marketCap: 130_000 });
     assert.match(html, /↗ 0\.1 WETH \(\$130\.00\)/);
   });
+});
+
+test('an ERC-4337 sell into a Uniswap v4 PoolManager is not a buy', () => {
+  const WALLET = '0xd000000000000000000000000000000000cc76'.padEnd(42, '0').slice(0, 42);
+  const PROXY = '0x1967000000000000000000000000000000000001';
+  const PM = '0x8366000000000000000000000000000000000951';
+  const ZERO = '0x0000000000000000000000000000000000000000';
+  const logs = [
+    tr(TOKEN, WALLET, PROXY, 1_114_115n * E18),
+    tr(TOKEN, PROXY, PM, 1_114_115n * E18),
+    tr(WETH, ZERO, PROXY, 63_551n * 10n ** 12n), // minted
+    tr(WETH, PROXY, ZERO, 63_551n * 10n ** 12n), // burnt (unwrapped to ETH for the seller)
+    { address: PM, topics: [V4_SWAP_TOPIC], data: '0x', transactionHash: '0xaa', logIndex: '0x99' },
+  ];
+  const bundler = '0x4337000000000000000000000000000000000000';
+  const evs = classify(logs, { token: TOKEN, contracts: new Set([WALLET, PROXY, PM]), signer: bundler });
+  assert.equal(evs.filter((e) => e.type === 'buy').length, 0);
+});
+
+test('a v4 buy out of the PoolManager still counts', () => {
+  const PM = '0x8366000000000000000000000000000000000951';
+  const logs = [
+    tr(WETH, BUYER, PM, E18 / 10n),
+    tr(TOKEN, PM, BUYER, 1_000_000n * E18),
+    { address: PM, topics: [V4_SWAP_TOPIC], data: '0x', transactionHash: '0xaa', logIndex: '0x99' },
+  ];
+  const [ev] = classify(logs, { token: TOKEN, contracts: new Set([PM]), signer: BUYER }).filter((e) => e.type === 'buy');
+  assert.equal(ev.buyer, BUYER);
 });
