@@ -16,6 +16,7 @@ const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replac
 export const COMMANDS = [
   { command: 'seal', description: 'Seal a message until a date (private chat)' },
   { command: 'open', description: 'Open a capsule or see how long is left' },
+  { command: 'predict', description: 'Seal a prediction, revealed in the group later' },
   { command: 'raffle', description: 'Raffle tickets, burns and countdown' },
   { command: 'lockra', description: '$LOCKRA price, market cap and burned' },
   { command: 'help', description: 'How LOCKRA works' },
@@ -35,6 +36,10 @@ const HELP = [
   '<code>/open https://lockra.buzz/#c=…</code>',
   'or reply <code>/open</code> to a message that contains a capsule link.',
   '',
+  '<b>Predict</b> (in a private chat with me):',
+  '<code>/predict 7d $LOCKRA hits 300K market cap</code>',
+  'I announce it in the group, sealed. When the time comes, I reveal it there. Nobody can read or change it before then.',
+  '',
   '<b>Community</b>: /raffle for tickets and countdown, /lockra for price, market cap and burns.',
   '',
   '⚠️ Never seal seed phrases, private keys or passwords.',
@@ -47,6 +52,15 @@ const SEAL_USAGE = [
   '<code>/seal 2027-01-01 Happy new year, future me</code>',
   '',
   'Times: <code>30m</code> <code>2h</code> <code>7d</code> <code>2w</code> <code>3mo</code> <code>1y</code> or a UTC date like <code>2027-01-01</code>.',
+].join('\n');
+
+const PREDICT_USAGE = [
+  '🔮 <b>Seal a prediction</b>. I announce it in the group, sealed, and reveal it there when the time comes.',
+  '',
+  '<code>/predict 7d $LOCKRA hits 300K market cap</code>',
+  '<code>/predict 2026-12-31 BTC closes the year above 150k</code>',
+  '',
+  'Times: <code>1h</code> <code>1d</code> <code>7d</code> <code>2w</code> <code>3mo</code> or a UTC date. At least 1 hour, at most 1 year.',
 ].join('\n');
 
 const ERRORS = {
@@ -64,9 +78,10 @@ const ERRORS = {
  *   now?: () => number,
  *   log?: (msg: string) => void,
  *   info?: { raffle: () => Promise<string>, stats: () => Promise<string> },
+ *   predictions?: { chats: string[], store: { add: Function } },
  * }} options
  */
-export function createBot({ call, username, sdkOptions = {}, now = Date.now, log = () => {}, info = null }) {
+export function createBot({ call, username, sdkOptions = {}, now = Date.now, log = () => {}, info = null, predictions = null }) {
   const seals = new Map(); // userId -> timestamps (ms), in memory only
 
   const reply = (msg, text, extra = {}) =>
@@ -79,7 +94,7 @@ export function createBot({ call, username, sdkOptions = {}, now = Date.now, log
       ...extra,
     });
 
-  const dmButton = (label) => ({ inline_keyboard: [[{ text: label, url: `https://t.me/${username}?start=seal` }]] });
+  const dmButton = (label, start = 'seal') => ({ inline_keyboard: [[{ text: label, url: `https://t.me/${username}?start=${start}` }]] });
 
   function allowSeal(userId) {
     const t = now();
@@ -129,6 +144,61 @@ export function createBot({ call, username, sdkOptions = {}, now = Date.now, log
     );
   }
 
+  async function onPredict(msg, args) {
+    if (!predictions?.chats?.length) return reply(msg, 'Predictions are not set up for this bot yet.');
+    if (msg.chat.type !== 'private') {
+      if (args) await call('deleteMessage', { chat_id: msg.chat.id, message_id: msg.message_id }).catch(() => {});
+      return call('sendMessage', {
+        chat_id: msg.chat.id,
+        text: 'Predictions are sealed in a private chat with me, so nobody sees them early 🔮',
+        reply_markup: dmButton('Seal a prediction', 'predict'),
+      });
+    }
+    const [when, ...rest] = args.split(/\s+/);
+    const message = rest.join(' ').trim();
+    if (!when || !message) return reply(msg, PREDICT_USAGE);
+    const parsed = parseWhen(when, now());
+    if ('error' in parsed) return reply(msg, `${esc(parsed.error)}\n\n${PREDICT_USAGE}`);
+    const secs = (parsed.date.getTime() - now()) / 1000;
+    if (secs < 3600) return reply(msg, 'A prediction must stay sealed for at least 1 hour.');
+    if (secs > 366 * 86400) return reply(msg, 'A prediction can be sealed for at most 1 year.');
+    if (message.length > 280) return reply(msg, 'Keep predictions short: 280 characters at most.');
+    if (!allowSeal(msg.from?.id ?? msg.chat.id)) return reply(msg, `You have sealed ${SEALS_PER_HOUR} capsules in the last hour. Please try again later.`);
+
+    const by = msg.from?.username ? `@${msg.from.username}` : (msg.from?.first_name || '').slice(0, 40);
+    const capsule = await seal(message, { unlockAt: parsed.date, by, label: 'Prediction', ...sdkOptions });
+    const when2 = formatDate(capsule.unlockAt);
+    const left = humanDuration((capsule.unlockAt.getTime() - now()) / 1000);
+    const announce = [
+      `🔮 <b>New sealed prediction</b>${by ? ` by ${esc(by)}` : ''}`,
+      '',
+      `Opens ${esc(when2)} (in ${left}).`,
+      'Nobody can read it before then. Not even its author.',
+      '',
+      'I will reveal it right here 👀',
+    ].join('\n');
+    let posted = 0;
+    for (const chatId of predictions.chats) {
+      const sent = await call('sendMessage', {
+        chat_id: chatId,
+        text: announce,
+        parse_mode: 'HTML',
+        link_preview_options: { is_disabled: true },
+        reply_markup: { inline_keyboard: [[{ text: 'See the capsule', url: capsule.link }]] },
+      }).catch((e) => { log(`prediction announce to ${chatId} failed: ${e.message}`); return null; });
+      if (!sent?.message_id) continue;
+      posted++;
+      await predictions.store.add({ link: capsule.link, chatId, messageId: sent.message_id, by, unlockAt: capsule.unlockAt.getTime(), sealedAt: now() })
+        .catch((e) => log(`prediction store failed: ${e.message}`));
+    }
+    return reply(
+      msg,
+      posted
+        ? `🔮 <b>Sealed and announced in the group.</b>\nIt opens ${esc(when2)} (in ${left}), and I will reveal it there.\n\n<code>${esc(capsule.link)}</code>`
+        : `🔒 Sealed, but I could not post it in the group right now.\n\n<code>${esc(capsule.link)}</code>`,
+    );
+  }
+
   async function onOpen(msg, args) {
     const link = findCapsule(args) || findCapsule(msg.reply_to_message?.text) || findCapsule(msg.reply_to_message?.caption);
     if (!link) return reply(msg, 'Send me a capsule link: <code>/open https://lockra.buzz/#c=…</code>\nor reply <code>/open</code> to a message that contains one.');
@@ -170,6 +240,7 @@ export function createBot({ call, username, sdkOptions = {}, now = Date.now, log
 
   async function onStart(msg, args) {
     if (args === 'seal') return reply(msg, SEAL_USAGE);
+    if (args === 'predict') return reply(msg, PREDICT_USAGE);
     return reply(msg, HELP);
   }
 
@@ -199,6 +270,8 @@ export function createBot({ call, username, sdkOptions = {}, now = Date.now, log
           return await onSeal(msg, cmd.args);
         case 'open':
           return await onOpen(msg, cmd.args);
+        case 'predict':
+          return await onPredict(msg, cmd.args);
         case 'raffle':
         case 'lockra':
         case 'stats': {
