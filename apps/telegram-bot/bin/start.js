@@ -3,7 +3,7 @@
 
 import { createTelegram } from '../src/telegram.js';
 import { createBot, COMMANDS } from '../src/bot.js';
-import { createAlerts, createRpc, createEthPrice, createMarket } from '../src/alerts.js';
+import { createAlerts, createRpc, createEthPrice, createMarket, createPoolPrice, STABLE } from '../src/alerts.js';
 import { createInfo } from '../src/info.js';
 
 const log = (msg) => console.log(`[lockra-bot] ${new Date().toISOString()} ${msg}`);
@@ -54,6 +54,14 @@ if (chats.length) {
       : telegram.call('sendMessage', { chat_id, text: html, parse_mode: 'HTML', link_preview_options: { is_disabled: true }, reply_markup });
   };
   const market = createMarket(tokenAddress);
+  const ethUsd = createEthPrice(explorer, fetch, tokenAddress);
+  const symbolOf = async (a) => { try { const h = (await rpc('eth_call', [{ to: a, data: '0x95d89b41' }, 'latest'])).slice(2); const len = parseInt(h.slice(64, 128), 16); return Buffer.from(h.slice(128, 128 + len * 2), 'hex').toString(); } catch { return ''; } };
+  const poolPrice = createPoolPrice({
+    rpc,
+    token: tokenAddress,
+    findPair: market.pair,
+    quoteUsd: async (q) => { const sym = await symbolOf(q); return STABLE.test(sym) ? 1 : /^W?ETH$/i.test(sym) ? ethUsd() : null; },
+  });
   alerts = createAlerts({
     rpc,
     send,
@@ -61,7 +69,8 @@ if (chats.length) {
     token: tokenAddress,
     pools: (process.env.POOL_ADDRESSES || '').split(',').map((s) => s.trim()).filter(Boolean),
     explorer,
-    ethUsd: createEthPrice(explorer, fetch, tokenAddress),
+    ethUsd,
+    poolPrice,
     marketCap: market.marketCap,
     tokenPrice: market.price,
     marketCapDelayMs: Number(process.env.MARKET_CAP_DELAY_MS ?? 8000),
