@@ -6,6 +6,8 @@ import { createBot, COMMANDS } from '../src/bot.js';
 import { createAlerts, createRpc, createEthPrice, createMarket, createPoolPrice, STABLE } from '../src/alerts.js';
 import { createInfo } from '../src/info.js';
 import { fileStore, createRevealer } from '../src/predictions.js';
+import { jsonFile, createScores } from '../src/scores.js';
+import { dirname, join } from 'node:path';
 import { formatDate } from '../src/parse.js';
 
 const log = (msg) => console.log(`[lockra-bot] ${new Date().toISOString()} ${msg}`);
@@ -108,14 +110,17 @@ const info = createInfo({
 info.raffleUrl = raffleUrl;
 // Sealed predictions: announced and revealed in PREDICT_CHAT_IDS (defaults to the alert chats).
 const predictChats = (process.env.PREDICT_CHAT_IDS || process.env.ALERT_CHAT_IDS || '').split(',').map((s) => s.trim()).filter(Boolean);
-const predictionStore = fileStore(process.env.PREDICTIONS_FILE || 'data/predictions.json');
+const predictionsFile = process.env.PREDICTIONS_FILE || 'data/predictions.json';
+const predictionStore = fileStore(predictionsFile);
+// Leaderboard votes live next to the predictions file (same volume on Railway).
+const scores = createScores({ file: jsonFile(process.env.SCORES_FILE || join(dirname(predictionsFile), 'scores.json')) });
 if (predictChats.length) {
-  createRevealer({ call: telegram.call, store: predictionStore, log, formatDate })
+  createRevealer({ call: telegram.call, store: predictionStore, scores, log, formatDate })
     .run({ signal: controller.signal })
     .catch((e) => log(`predictions stopped: ${e.message}`));
   log(`predictions on for ${predictChats.length} chat(s)`);
 }
-const bot = createBot({ call: telegram.call, username: me.username, log, info, predictions: { chats: predictChats, store: predictionStore } });
+const bot = createBot({ call: telegram.call, username: me.username, log, info, predictions: { chats: predictChats, store: predictionStore }, scores });
 
 log(`@${me.username} is running`);
 await telegram.poll(bot.handleUpdate, { signal: controller.signal, log });

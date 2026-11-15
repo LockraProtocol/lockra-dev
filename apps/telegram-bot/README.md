@@ -9,6 +9,7 @@ Seal and open LOCKRA time capsules without leaving Telegram. Built on [lockra-sd
 | `/open <link>` | Anywhere | Shows how long is left, or the message once unlocked. |
 | `/open` as a reply | Anywhere | Opens the capsule link in the replied-to message. |
 | `/predict` | Private chat | Seal a prediction. It is announced sealed in the group and revealed there automatically when its time comes. |
+| `/leaderboard` | Anywhere | Best prediction callers, judged by the group (`/top` also works). |
 | `/raffle` | Anywhere | Raffle tickets, wallets, burned amount and countdown, live from the explorer. |
 | `/lockra` | Anywhere | $LOCKRA price, market cap, liquidity, volume and total burned (`/stats` also works). |
 | `/help` | Anywhere | How LOCKRA works. |
@@ -52,6 +53,8 @@ Any platform that can run `npm start` with an environment variable works the sam
 ## Sealed predictions
 
 `/predict 7d $LOCKRA hits 300K market cap` in a private chat seals the prediction with the same timelock encryption as any capsule. The bot posts a sealed announcement in the group (`PREDICT_CHAT_IDS`, or the alert chats by default) and, when the time comes, replies to that announcement with the revealed text. Nobody can read or change a prediction early, not even its author.
+
+When a prediction is revealed, the group votes on it for 24 hours with two buttons: ✅ Called it / ❌ Missed it. One vote per person (it can be changed), and authors cannot vote on their own. When voting closes, the bot posts the verdict and the majority result counts on `/leaderboard` (ties and predictions with no votes are not scored). Votes are kept in `scores.json` next to the predictions file (or `SCORES_FILE`), so on Railway they live on the same volume.
 
 Pending predictions are kept in a small JSON file (`PREDICTIONS_FILE`, default `data/predictions.json`). On Railway, add a volume and point `PREDICTIONS_FILE` into it so pending reveals survive redeploys. If the file is lost, nothing breaks: anyone can reply `/open` to an announcement to open it.
 

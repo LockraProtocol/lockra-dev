@@ -6,6 +6,7 @@
 
 import { seal, open, inspect, LockraError } from 'lockra-sdk';
 import { parseWhen, findCapsule, parseCommand, humanDuration, formatDate } from './parse.js';
+import { voteKeyboard } from './scores.js';
 
 export const MAX_MESSAGE = 1000;
 export const SEALS_PER_HOUR = 10;
@@ -17,6 +18,7 @@ export const COMMANDS = [
   { command: 'seal', description: 'Seal a message until a date (private chat)' },
   { command: 'open', description: 'Open a capsule or see how long is left' },
   { command: 'predict', description: 'Seal a prediction, revealed in the group later' },
+  { command: 'leaderboard', description: 'Best prediction callers' },
   { command: 'raffle', description: 'Raffle tickets, burns and countdown' },
   { command: 'lockra', description: '$LOCKRA price, market cap and burned' },
   { command: 'help', description: 'How LOCKRA works' },
@@ -39,6 +41,7 @@ const HELP = [
   '<b>Predict</b> (in a private chat with me):',
   '<code>/predict 7d $LOCKRA hits 300K market cap</code>',
   'I announce it in the group, sealed. When the time comes, I reveal it there. Nobody can read or change it before then.',
+  'Then the group votes: called it or missed it. The best callers top /leaderboard 🏆',
   '',
   '<b>Community</b>: /raffle for tickets and countdown, /lockra for price, market cap and burns.',
   '',
@@ -79,9 +82,10 @@ const ERRORS = {
  *   log?: (msg: string) => void,
  *   info?: { raffle: () => Promise<string>, stats: () => Promise<string> },
  *   predictions?: { chats: string[], store: { add: Function } },
+ *   scores?: { vote: Function, leaderboardText: Function },
  * }} options
  */
-export function createBot({ call, username, sdkOptions = {}, now = Date.now, log = () => {}, info = null, predictions = null }) {
+export function createBot({ call, username, sdkOptions = {}, now = Date.now, log = () => {}, info = null, predictions = null, scores = null }) {
   const seals = new Map(); // userId -> timestamps (ms), in memory only
 
   const reply = (msg, text, extra = {}) =>
@@ -175,7 +179,7 @@ export function createBot({ call, username, sdkOptions = {}, now = Date.now, log
       `Opens ${esc(when2)} (in ${left}).`,
       'Nobody can read it before then. Not even its author.',
       '',
-      'I will reveal it right here 👀',
+      scores ? 'I will reveal it right here, then you vote: called it or missed it 👀' : 'I will reveal it right here 👀',
     ].join('\n');
     let posted = 0;
     for (const chatId of predictions.chats) {
@@ -188,7 +192,7 @@ export function createBot({ call, username, sdkOptions = {}, now = Date.now, log
       }).catch((e) => { log(`prediction announce to ${chatId} failed: ${e.message}`); return null; });
       if (!sent?.message_id) continue;
       posted++;
-      await predictions.store.add({ link: capsule.link, chatId, messageId: sent.message_id, by, unlockAt: capsule.unlockAt.getTime(), sealedAt: now() })
+      await predictions.store.add({ link: capsule.link, chatId, messageId: sent.message_id, by, byId: msg.from?.id ?? null, unlockAt: capsule.unlockAt.getTime(), sealedAt: now() })
         .catch((e) => log(`prediction store failed: ${e.message}`));
     }
     return reply(
@@ -244,8 +248,22 @@ export function createBot({ call, username, sdkOptions = {}, now = Date.now, log
     return reply(msg, HELP);
   }
 
+  // Taps on the ✅ / ❌ buttons under a revealed prediction.
+  async function onVote(q) {
+    const m = /^pv:([0-9a-f]+):([01x])$/.exec(q.data || '');
+    if (!m || !scores) return call('answerCallbackQuery', { callback_query_id: q.id }).catch(() => {});
+    if (m[2] === 'x') return call('answerCallbackQuery', { callback_query_id: q.id, text: 'Voting on this prediction is closed. See /leaderboard' }).catch(() => {});
+    const r = await scores.vote(m[1], q.from.id, m[2] === '1');
+    await call('answerCallbackQuery', { callback_query_id: q.id, text: r.text }).catch(() => {});
+    if (r.ok && q.message) {
+      await call('editMessageReplyMarkup', { chat_id: q.message.chat.id, message_id: q.message.message_id, reply_markup: voteKeyboard(r.poll, r.poll.link) })
+        .catch((e) => { if (!/not modified/i.test(e.message)) log(`vote buttons: ${e.message}`); });
+    }
+  }
+
   /** Handle one Telegram update. Never throws for user-facing errors. */
   async function handleUpdate(update) {
+    if (update.callback_query) return await onVote(update.callback_query).catch((e) => log(`vote failed: ${e?.message ?? e}`));
     const msg = update.message;
     if (msg && msg.chat.type === 'private' && (msg.animation || msg.video)) return await onMedia(msg).catch((e) => log(`media failed: ${e?.message ?? e}`));
     if (msg?.chat.type === 'private' && msg.sticker) {
@@ -272,6 +290,10 @@ export function createBot({ call, username, sdkOptions = {}, now = Date.now, log
           return await onOpen(msg, cmd.args);
         case 'predict':
           return await onPredict(msg, cmd.args);
+        case 'leaderboard':
+        case 'top':
+          if (!scores) return;
+          return await reply(msg, await scores.leaderboardText());
         case 'raffle':
         case 'lockra':
         case 'stats': {
