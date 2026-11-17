@@ -20,6 +20,7 @@ export const COMMANDS = [
   { command: 'predict', description: 'Seal a prediction, revealed in the group later' },
   { command: 'leaderboard', description: 'Best prediction callers' },
   { command: 'kols', description: 'LOCKRA KOLs ranking: sealed calls, real track records' },
+  { command: 'raffle', description: 'Current raffle: tickets, burns and countdown' },
   { command: 'lockra', description: '$LOCKRA price, market cap and burned' },
   { command: 'help', description: 'How LOCKRA works' },
 ];
@@ -44,6 +45,8 @@ const HELP = [
   'Then the group votes: called it or missed it. The best callers top /leaderboard 🏆',
   '',
   '<b>KOLs</b>: /kols for the ranking. KOLs apply with /kol in a private chat.',
+  '',
+  '<b>Raffle</b>: /raffle for tickets and the countdown.',
   '',
   '<b>Community</b>: /lockra for price, market cap and burns.',
   '',
