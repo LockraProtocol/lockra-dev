@@ -298,7 +298,7 @@ export function createAlerts(o) {
         html = buyMessage({ ev, symbol, decimals, quoteSymbol: q.symbol, quoteDecimals: q.decimals, quoteUsd, supply: circulating, links: { explorer: o.explorer }, emoji: o.emoji, step: o.step, before, marketCap, usdEstimate, usdOverride });
       } else {
         if (!o.burns) continue;
-        html = burnMessage({ ev, symbol, decimals, links: { explorer: o.explorer }, ticketSize: o.ticketSize });
+        html = burnMessage({ ev, symbol, decimals, links: { explorer: o.explorer }, ticketSize: typeof o.ticketSize === 'function' ? o.ticketSize() : o.ticketSize });
       }
       const buttons = typeof o.buttons === 'function' ? o.buttons(ev) : o.buttons || [];
       for (const chat of o.chats) await o.send(chat, html, buttons, ev.type).catch((e) => log(`send to ${chat} failed: ${e.message}`));

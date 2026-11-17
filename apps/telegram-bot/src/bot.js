@@ -19,7 +19,6 @@ export const COMMANDS = [
   { command: 'open', description: 'Open a capsule or see how long is left' },
   { command: 'predict', description: 'Seal a prediction, revealed in the group later' },
   { command: 'leaderboard', description: 'Best prediction callers' },
-  { command: 'raffle', description: 'Raffle tickets, burns and countdown' },
   { command: 'lockra', description: '$LOCKRA price, market cap and burned' },
   { command: 'help', description: 'How LOCKRA works' },
 ];
@@ -43,7 +42,7 @@ const HELP = [
   'I announce it in the group, sealed. When the time comes, I reveal it there. Nobody can read or change it before then.',
   'Then the group votes: called it or missed it. The best callers top /leaderboard 🏆',
   '',
-  '<b>Community</b>: /raffle for tickets and countdown, /lockra for price, market cap and burns.',
+  '<b>Community</b>: /lockra for price, market cap and burns.',
   '',
   '⚠️ Never seal seed phrases, private keys or passwords.',
 ].join('\n');
@@ -301,7 +300,7 @@ export function createBot({ call, username, sdkOptions = {}, now = Date.now, log
           const raffleUrl = info.raffleUrl || 'https://lockra.buzz/raffle';
           const text = await info[cmd.name === 'raffle' ? 'raffle' : 'stats']().catch((e) => { log(`/${cmd.name}: ${e.message}`); return null; });
           if (!text) return await reply(msg, 'Could not load the numbers right now. Please try again in a minute.');
-          return await reply(msg, text, cmd.name === 'raffle' ? { reply_markup: { inline_keyboard: [[{ text: '🔥 Burn to enter', url: raffleUrl }]] } } : {});
+          return await reply(msg, text, cmd.name === 'raffle' ? { link_preview_options: { is_disabled: true }, reply_markup: { inline_keyboard: [[info.raffleEnded?.() ? { text: '🏆 See the winner', url: raffleUrl } : { text: '🔥 Burn to enter', url: raffleUrl }]] } } : {});
         }
         case 'chatid':
           // Lets an admin find the id to put in ALERT_CHAT_IDS. Not listed in the menu.
