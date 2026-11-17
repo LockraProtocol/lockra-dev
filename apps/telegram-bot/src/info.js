@@ -98,7 +98,7 @@ export function createInfo(o) {
     const ended = t >= r.end;
     const w = r.winner;
     const lines = [
-      ended ? '🎟 <b>FOBO × LOCKRA Raffle</b> · ENDED' : '🎟 <b>FOBO × LOCKRA Raffle</b>',
+      ended ? `🎟 <b>${esc(r.name || 'LOCKRA Raffle')}</b> · ENDED` : `🎟 <b>${esc(r.name || 'LOCKRA Raffle')}</b>`,
       '',
       r.prize ? `🏆 Prize: ${esc(r.prize)}` : null,
       `🎟 Tickets: <b>${c.tickets.toLocaleString('en')}</b> from ${c.wallets} wallet${c.wallets === 1 ? '' : 's'}`,

@@ -101,3 +101,15 @@ npm test
 ```
 
 The suite covers command parsing, sealing and opening against a local test beacon, group privacy, rate limits, error handling and the long-polling loop.
+
+
+## LOCKRA KOLs
+
+Sealed calls with a public track record (lockra.buzz/kols).
+
+- KOLs apply in a private chat: `/kol join @x 0xWallet`. Admins in `KOL_ADMIN_IDS` (comma-separated Telegram user ids) get Approve / Reject buttons.
+- Verified KOLs seal calls in private: `/call 0xToken 5M 7d` (token, market cap target, 1h to 90d). The call is announced sealed in the KOL's linked channel and in `PREDICT_CHAT_IDS`, and revealed at the deadline: a hit if the DexScreener market cap is at or above the target. Harder targets earn more points.
+- `/kol channel` gives a one-time code; posting `/link CODE` in a channel where the bot is admin links it.
+- `/kols` shows the season ranking. Seasons are calendar months (UTC); the winner is crowned KOL of the month.
+- Badges: verified, holder tiers (250K / 1M / 5M $LOCKRA in the KOL wallet), sniper, on fire, diamond hands, KOL of the month.
+- Data lives in `kols.json` next to the predictions file (or `KOLS_FILE`). If `PORT` is set, the bot serves it read-only at `/kols.json` for the website.

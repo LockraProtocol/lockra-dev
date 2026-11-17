@@ -44,7 +44,7 @@ export function createTelegram({ token, fetch: doFetch = globalThis.fetch, baseU
     while (!signal?.aborted) {
       let updates;
       try {
-        updates = await call('getUpdates', { offset, timeout: 50, allowed_updates: ['message', 'callback_query'] }, { timeoutMs: 65_000 });
+        updates = await call('getUpdates', { offset, timeout: 50, allowed_updates: ['message', 'callback_query', 'channel_post'] }, { timeoutMs: 65_000 });
         backoff = 1000;
       } catch (err) {
         if (signal?.aborted) break;

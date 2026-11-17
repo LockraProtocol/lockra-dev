@@ -19,6 +19,8 @@ export const COMMANDS = [
   { command: 'open', description: 'Open a capsule or see how long is left' },
   { command: 'predict', description: 'Seal a prediction, revealed in the group later' },
   { command: 'leaderboard', description: 'Best prediction callers' },
+  { command: 'kols', description: 'LOCKRA KOLs ranking: sealed calls, real track records' },
+  { command: 'raffle', description: 'Current raffle: tickets, burns and countdown' },
   { command: 'lockra', description: '$LOCKRA price, market cap and burned' },
   { command: 'help', description: 'How LOCKRA works' },
 ];
@@ -41,6 +43,10 @@ const HELP = [
   '<code>/predict 7d $LOCKRA hits 300K market cap</code>',
   'I announce it in the group, sealed. When the time comes, I reveal it there. Nobody can read or change it before then.',
   'Then the group votes: called it or missed it. The best callers top /leaderboard 🏆',
+  '',
+  '<b>KOLs</b>: /kols for the ranking. KOLs apply with /kol in a private chat.',
+  '',
+  '<b>Raffle</b>: /raffle for tickets and the countdown.',
   '',
   '<b>Community</b>: /lockra for price, market cap and burns.',
   '',
@@ -84,7 +90,7 @@ const ERRORS = {
  *   scores?: { vote: Function, leaderboardText: Function },
  * }} options
  */
-export function createBot({ call, username, sdkOptions = {}, now = Date.now, log = () => {}, info = null, predictions = null, scores = null }) {
+export function createBot({ call, username, sdkOptions = {}, now = Date.now, log = () => {}, info = null, predictions = null, scores = null, kols = null }) {
   const seals = new Map(); // userId -> timestamps (ms), in memory only
 
   const reply = (msg, text, extra = {}) =>
@@ -262,7 +268,11 @@ export function createBot({ call, username, sdkOptions = {}, now = Date.now, log
 
   /** Handle one Telegram update. Never throws for user-facing errors. */
   async function handleUpdate(update) {
-    if (update.callback_query) return await onVote(update.callback_query).catch((e) => log(`vote failed: ${e?.message ?? e}`));
+    if (update.callback_query) {
+      if (kols && (await kols.handleCallback(update.callback_query).catch((e) => { log(`kol callback failed: ${e?.message ?? e}`); return true; }))) return;
+      return await onVote(update.callback_query).catch((e) => log(`vote failed: ${e?.message ?? e}`));
+    }
+    if (update.channel_post) return kols ? await kols.handleChannelPost(update.channel_post).catch((e) => log(`channel post failed: ${e?.message ?? e}`)) : undefined;
     const msg = update.message;
     if (msg && msg.chat.type === 'private' && (msg.animation || msg.video)) return await onMedia(msg).catch((e) => log(`media failed: ${e?.message ?? e}`));
     if (msg?.chat.type === 'private' && msg.sticker) {
@@ -278,6 +288,7 @@ export function createBot({ call, username, sdkOptions = {}, now = Date.now, log
     const cmd = parseCommand(text, username);
     if (!cmd) return;
     try {
+      if (kols && (await kols.handleCommand(msg, cmd))) return;
       switch (cmd.name) {
         case 'start':
           return await onStart(msg, cmd.args);
