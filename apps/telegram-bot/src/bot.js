@@ -227,6 +227,11 @@ export function createBot({ call, username, sdkOptions = {}, now = Date.now, log
         { reply_markup: { inline_keyboard: [[{ text: 'Watch it on lockra.buzz', url: link }]] } },
       );
     }
+    if (r.passwordProtected) {
+      return reply(msg, `🔐 <b>The time has come</b>, but this capsule is also password protected.${head ? `\n${head}` : ''}${wallet}\n\nOnly the person with the password can read it, on lockra.buzz.`, {
+        reply_markup: { inline_keyboard: [[{ text: 'Open with password', url: link }]] },
+      });
+    }
     const body = r.message.length > MAX_SHOWN ? `${r.message.slice(0, MAX_SHOWN)}…` : r.message;
     const sealed = r.sealedAt ? `\nSealed ${esc(formatDate(r.sealedAt))}` : '';
     const file = r.file ? `\n📎 Contains a file (${esc(r.file.name)}). Open it on lockra.buzz.` : '';

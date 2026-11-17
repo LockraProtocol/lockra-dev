@@ -155,6 +155,8 @@ function openedResult(ref, round, unlockAt, payload) {
     by: ref.by,
     wallet: verifyWallet(ref),
     file: payload.f ? { name: payload.f.n, type: payload.f.t, size: payload.f.s } : null,
+    // Capsules sealed on lockra.buzz with a password: the time lock is open, the content needs the password.
+    passwordProtected: Boolean(payload.pw),
   };
 }
 
