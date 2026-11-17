@@ -45,7 +45,7 @@ export function decodeSwap(log) {
  * @returns {null | { side: 'buy'|'sell', poolId: string, amount: bigint, quoteAmount: bigint,
  *   quoteToken: string, tokenIs0: boolean, sqrtPriceX96: bigint, buyer: string|null }}
  */
-export function findV4Trade(logs, { token, poolManager = FOBO_POOL_MANAGER, poolId = null }) {
+export function findV4Trade(logs, { token, poolManager = FOBO_POOL_MANAGER, poolId = null, tokenIs0: knownSide = null }) {
   const t = token.toLowerCase();
   const pm = poolManager.toLowerCase();
   const swaps = logs.map(decodeSwap).filter((s) => s && s.manager === pm).sort((a, b) => a.logIndex - b.logIndex);
@@ -63,14 +63,22 @@ export function findV4Trade(logs, { token, poolManager = FOBO_POOL_MANAGER, pool
   let tokenIs0 = null;
   const sum = (list, k) => list.reduce((a, s) => a + abs(s[k]), 0n);
   const close = (a, b) => a === b || abs(a - b) * 1000n <= b; // within 0.1% (rounding)
-  for (const [pid, list] of byPool) {
-    if (id && pid !== id) continue;
-    if (close(sum(list, 'amount0'), moved)) { id = pid; tokenIs0 = true; break; }
-    if (close(sum(list, 'amount1'), moved)) { id = pid; tokenIs0 = false; break; }
+  const net = (list, k) => abs(list.reduce((a, s) => a + s[k], 0n));
+  const near = (a, b) => abs(a - b) * 100n <= b * 3n; // within 3% (hook fees taken outside the Swap event)
+  for (const test of [close, near]) {
+    for (const [pid, list] of byPool) {
+      if (id && pid !== id) continue;
+      if (knownSide !== false && (test(sum(list, 'amount0'), moved) || test(net(list, 'amount0'), moved))) { id = pid; tokenIs0 = true; break; }
+      if (knownSide !== true && (test(sum(list, 'amount1'), moved) || test(net(list, 'amount1'), moved))) { id = pid; tokenIs0 = false; break; }
+    }
+    if (tokenIs0 != null) break;
   }
+  // Our pool is known and swapped in this tx, but the amounts don't line up (split routes, hook
+  // buybacks in the same block): trust the pool and the LOCKRA that actually left the PoolManager.
+  if (tokenIs0 == null && id && knownSide != null) tokenIs0 = knownSide;
   if (!id || tokenIs0 == null) return null;
   const ours = byPool.get(id);
-  const quoteAmount = sum(ours, tokenIs0 ? 'amount1' : 'amount0');
+  const quoteAmount = ours.length > 1 ? net(ours, tokenIs0 ? 'amount1' : 'amount0') || sum(ours, tokenIs0 ? 'amount1' : 'amount0') : sum(ours, tokenIs0 ? 'amount1' : 'amount0');
   const last = ours[ours.length - 1];
 
   // Quote token: an ERC-20 moving into/out of the PoolManager with about the quote amount, else native ETH.

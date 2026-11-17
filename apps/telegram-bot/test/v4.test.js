@@ -62,6 +62,21 @@ test('multi-hop: USDG -> ETH in another pool, then ETH -> LOCKRA in ours', () =>
   assert.equal(t.buyer, BUYER);
 });
 
+test('split route with a hook buyback in our pool still alerts the buy', () => {
+  const logs = [
+    tr(USDG, BUYER, PM, 110_000_000n),
+    swap(OTHER_POOL, 110_000_000n, -(41n * 10n ** 15n), 1n << 96n),
+    swap(POOL_ID, -(300n * 10n ** 15n), 7_050_000n * E18, sqrtFor(0.0000000425)),
+    swap(POOL_ID, -(4n * 10n ** 15n), 90_000n * E18, sqrtFor(0.0000000426), '0x0af57f62982d03066ef917acad87f771c06528ec'),
+    tr(TOKEN, PM, ROUTER, 7_050_000n * E18),
+    tr(TOKEN, ROUTER, BUYER, 7_050_000n * E18),
+  ];
+  const t = findV4Trade(logs, { token: TOKEN, poolId: POOL_ID, tokenIs0: false });
+  assert.equal(t.side, 'buy');
+  assert.equal(t.buyer, BUYER);
+  assert.equal(t.amount, 7_050_000n * E18);
+});
+
 test('no LOCKRA through the PoolManager: not ours', () => {
   const logs = [tr(USDG, BUYER, PM, 5n), swap(OTHER_POOL, 5n, -5n, 1n << 96n)];
   assert.equal(findV4Trade(logs, { token: TOKEN }), null);
