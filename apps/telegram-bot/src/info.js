@@ -95,15 +95,18 @@ export function createInfo(o) {
     const t = now();
     const c = countTickets(await burnsSince(r.start), { token: o.token, ...r });
     const live = t >= r.start && t < r.end;
+    const ended = t >= r.end;
+    const w = r.winner;
     const lines = [
-      '🎟 <b>FOBO × LOCKRA Raffle</b>',
+      ended ? '🎟 <b>FOBO × LOCKRA Raffle</b> · ENDED' : '🎟 <b>FOBO × LOCKRA Raffle</b>',
       '',
       r.prize ? `🏆 Prize: ${esc(r.prize)}` : null,
       `🎟 Tickets: <b>${c.tickets.toLocaleString('en')}</b> from ${c.wallets} wallet${c.wallets === 1 ? '' : 's'}`,
       `🔥 Burned: ${formatUnits(c.burned, decimals)} $LOCKRA`,
-      live ? `⏳ Closes in <b>${countdown(r.end - t)}</b> (${esc(cet(r.end))})` : t < r.start ? `🕒 Opens ${esc(cet(r.start))}` : `🔒 Closed. The draw is on the raffle page.`,
+      ended && w ? `🥇 Winner: ticket <b>${esc(w.ticket)}</b> · <a href="${o.explorer}/address/${esc(w.wallet)}">${esc(w.wallet.slice(0, 6) + '…' + w.wallet.slice(-4))}</a>` : null,
+      live ? `⏳ Closes in <b>${countdown(r.end - t)}</b> (${esc(cet(r.end))})` : t < r.start ? `🕒 Opens ${esc(cet(r.start))}` : ended && w ? null : `🔒 Closed. The draw is on the raffle page.`,
       '',
-      `Burn ${formatUnits(r.ticketSize, decimals)} $LOCKRA per ticket, max ${r.maxPerWallet ?? 5} per wallet.`,
+      ended ? 'Thanks to everyone who burned 🫡 Drawn by drand, verifiable on the raffle page.' : `Burn ${formatUnits(r.ticketSize, decimals)} $LOCKRA per ticket, max ${r.maxPerWallet ?? 5} per wallet.`,
     ].filter((l) => l != null).join('\n');
     cache = { at: Date.now(), v: lines };
     return lines;
@@ -139,5 +142,6 @@ export function createInfo(o) {
     ].filter((l) => l != null).join('\n');
   }
 
-  return { raffle, stats };
+  const raffleEnded = () => now() >= o.raffle.end;
+  return { raffle, stats, raffleEnded };
 }

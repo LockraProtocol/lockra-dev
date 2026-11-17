@@ -36,13 +36,17 @@ const explorer = process.env.EXPLORER_URL || 'https://robinhoodchain.blockscout.
 const tokenAddress = process.env.TOKEN_ADDRESS || '0x2fc6de9c65a620f918ca7d1191d3afa495ca2898';
 const rpc = createRpc(process.env.RPC_URL || 'https://rpc.mainnet.chain.robinhood.com');
 const raffleUrl = process.env.RAFFLE_URL || 'https://lockra.buzz/raffle';
+const raffleStart = Date.parse(process.env.RAFFLE_START || '2026-11-13T13:30:00Z') / 1000;
+const raffleEnd = Date.parse(process.env.RAFFLE_END || '2026-11-16T16:00:00Z') / 1000;
+// Burn alerts only mention the raffle (tickets, button) while it is open.
+const raffleLive = () => { const t = Date.now() / 1000; return t >= raffleStart && t < raffleEnd; };
 let alerts = null;
 
 const chats = (process.env.ALERT_CHAT_IDS || '').split(',').map((s) => s.trim()).filter(Boolean);
 if (chats.length) {
   const buyUrl = process.env.BUY_URL || `https://fobo.fun/?token=${tokenAddress}`;
   const buttons = (ev) => [
-    ev.type === 'buy' ? { text: '🛒 Buy $LOCKRA', url: buyUrl } : { text: '🎟 Raffle', url: raffleUrl },
+    ev.type === 'buy' ? { text: '🛒 Buy $LOCKRA', url: buyUrl } : raffleLive() && { text: '🎟 Raffle', url: raffleUrl },
     { text: 'Tx', url: `${explorer}/tx/${ev.tx}` },
     process.env.CHART_URL && ev.type === 'buy' && { text: '📈 Chart', url: process.env.CHART_URL },
   ].filter(Boolean);
@@ -85,7 +89,7 @@ if (chats.length) {
       ? `<tg-emoji emoji-id="${process.env.ALERT_EMOJI_ID.replace(/\D/g, '')}">${process.env.ALERT_EMOJI || '🔒'}</tg-emoji>`
       : process.env.ALERT_EMOJI || '🟢',
     burns: process.env.ALERT_BURNS !== 'false',
-    ticketSize: BigInt(process.env.RAFFLE_TICKET || '50000') * 10n ** 18n,
+    ticketSize: () => (raffleLive() ? BigInt(process.env.RAFFLE_TICKET || '50000') * 10n ** 18n : null),
     buttons,
     log,
   });
@@ -98,11 +102,16 @@ const info = createInfo({
   rpc,
   token: tokenAddress,
   raffle: {
-    start: Date.parse(process.env.RAFFLE_START || '2026-11-13T13:30:00Z') / 1000,
-    end: Date.parse(process.env.RAFFLE_END || '2026-11-16T16:00:00Z') / 1000,
+    start: raffleStart,
+    end: raffleEnd,
     ticketSize: BigInt(process.env.RAFFLE_TICKET || '50000') * 10n ** 18n,
     maxPerWallet: Number(process.env.RAFFLE_MAX_TICKETS || 5),
     prize: process.env.RAFFLE_PRIZE || '$500 jackpot by FOBO',
+    // Drawn on 16 Nov 2026 with drand round 34,013,812 (see lockra.buzz/raffle).
+    winner: process.env.RAFFLE_WINNER === 'none' ? null : {
+      ticket: process.env.RAFFLE_WINNER_TICKET || '21EB-A3E3',
+      wallet: process.env.RAFFLE_WINNER || '0x0d566e9b89853e2941eee5e54a6e7b67526db61c',
+    },
   },
   lastPrice: () => alerts?.lastPrice() ?? null,
   log,

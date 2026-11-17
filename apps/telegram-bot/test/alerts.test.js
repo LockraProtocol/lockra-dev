@@ -69,6 +69,12 @@ describe('messages', () => {
     assert.equal((html.match(/🟢/g) || []).length, 30);
   });
 
+  test('burn message has no raffle line when there is no open raffle', () => {
+    const html = burnMessage({ ev: { amount: 150_000n * 10n ** 18n, from: '0x' + 'a'.repeat(40) }, symbol: 'LOCKRA', decimals: 18, links: { explorer: 'https://x' }, ticketSize: null });
+    assert.match(html, /150,000 \$LOCKRA gone forever\n👤/);
+    assert.doesNotMatch(html, /raffle/);
+  });
+
   test('burn message counts raffle tickets', () => {
     const html = burnMessage({ ev: { from: BUYER, tx: '0xdef', amount: 150_000n * E18 }, symbol: 'LOCKRA', decimals: 18, links, ticketSize: 50_000n * E18 });
     assert.match(html, /150,000 \$LOCKRA gone forever/);

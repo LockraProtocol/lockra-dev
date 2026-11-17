@@ -69,6 +69,18 @@ describe('createInfo', () => {
     assert.ok(c.calls.getLogs > 1, 'range was split');
   });
 
+  test('after the end it shows ENDED and the winner, with no call to burn', async () => {
+    const at = (iso) => Date.parse(iso) / 1000 - T0;
+    const c = chain([{ from: '0x00000000000000000000000000000000000000aa', tokens: 100_000, block: at('2026-11-14T09:00:00Z') }]);
+    const winner = { ticket: '21EB-A3E3', wallet: '0x0d566e9b89853e2941eee5e54a6e7b67526db61c' };
+    const info = createInfo({ explorer: 'https://x', rpc: c.rpc, token: TOKEN, raffle: { ...raffle, winner }, now: () => end + 3600 });
+    const text = await info.raffle();
+    assert.match(text, /Raffle<\/b> · ENDED/);
+    assert.match(text, /Winner: ticket <b>21EB-A3E3<\/b> · <a href="https:\/\/x\/address\/0x0d56/);
+    assert.doesNotMatch(text, /per ticket|Closes in/);
+    assert.equal(info.raffleEnded(), true);
+  });
+
   test('stats uses DexScreener for price and the chain for supply and burns', async () => {
     const c = chain([]);
     const fetch = async (url) => ({
@@ -95,6 +107,9 @@ describe('/raffle and /stats commands', () => {
     assert.equal(calls[0].p.reply_markup.inline_keyboard[0][0].url, 'https://lockra.buzz/raffle');
     await bot.handleUpdate({ update_id: 2, message: { message_id: 2, text: '/lockra', chat: { id: -1, type: 'supergroup' }, from: { id: 2 } } });
     assert.equal(calls[1].p.text, 'S');
+    const ended = createBot({ call: async (m, p) => { calls.push({ m, p }); return {}; }, username: 'B', info: { raffle: async () => 'R', stats: async () => 'S', raffleEnded: () => true, raffleUrl: 'https://lockra.buzz/raffle' } });
+    await ended.handleUpdate({ update_id: 9, message: { message_id: 9, text: '/raffle', chat: { id: -1, type: 'group' }, from: { id: 2 } } });
+    assert.equal(calls.at(-1).p.reply_markup.inline_keyboard[0][0].text, '🏆 See the winner');
   });
 
   test('a failed lookup gives a friendly message', async () => {
