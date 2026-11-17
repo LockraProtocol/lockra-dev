@@ -9,6 +9,8 @@ import { fileStore, createRevealer } from '../src/predictions.js';
 import { jsonFile, createScores } from '../src/scores.js';
 import { dirname, join } from 'node:path';
 import { formatDate } from '../src/parse.js';
+import { createKols, kolsFile, dexLookup } from '../src/kols.js';
+import { createServer } from 'node:http';
 
 const log = (msg) => console.log(`[lockra-bot] ${new Date().toISOString()} ${msg}`);
 
@@ -129,7 +131,38 @@ if (predictChats.length) {
     .catch((e) => log(`predictions stopped: ${e.message}`));
   log(`predictions on for ${predictChats.length} chat(s)`);
 }
-const bot = createBot({ call: telegram.call, username: me.username, log, info, predictions: { chats: predictChats, store: predictionStore }, scores });
+// LOCKRA KOLs: sealed calls with a public track record. Admins (KOL_ADMIN_IDS) approve applications.
+const balanceOf = async (wallet) => {
+  const h = await rpc('eth_call', [{ to: tokenAddress, data: '0x70a08231' + wallet.slice(2).padStart(64, '0') }, 'latest']);
+  return Number(BigInt(h) / 10n ** 15n) / 1000;
+};
+const kols = createKols({
+  file: kolsFile(process.env.KOLS_FILE || join(dirname(predictionsFile), 'kols.json')),
+  call: telegram.call,
+  username: me.username,
+  lookup: dexLookup(),
+  balanceOf,
+  admins: (process.env.KOL_ADMIN_IDS || '').split(',').map((s) => s.trim()).filter(Boolean),
+  groups: predictChats,
+  site: process.env.KOLS_URL || 'https://lockra.buzz/kols',
+  log,
+});
+kols.run({ signal: controller.signal }).catch((e) => log(`kols stopped: ${e.message}`));
+// Public read-only data for lockra.buzz/kols (Railway: Settings > Networking > Generate Domain).
+const port = Number(process.env.PORT || 0);
+if (port) {
+  createServer(async (req, res) => {
+    const cors = { 'access-control-allow-origin': '*', 'access-control-allow-methods': 'GET', 'cache-control': 'public, max-age=20' };
+    if (req.method === 'OPTIONS') { res.writeHead(204, cors); return res.end(); }
+    if (req.url.split('?')[0] === '/kols.json') {
+      const body = JSON.stringify(await kols.publicView().catch(() => ({ error: 'unavailable' })));
+      res.writeHead(200, { ...cors, 'content-type': 'application/json' }); return res.end(body);
+    }
+    if (req.url === '/' || req.url === '/health') { res.writeHead(200, { ...cors, 'content-type': 'text/plain' }); return res.end('ok'); }
+    res.writeHead(404, cors); res.end();
+  }).listen(port, () => log(`kols api on :${port}/kols.json`));
+}
+const bot = createBot({ call: telegram.call, username: me.username, log, info, predictions: { chats: predictChats, store: predictionStore }, scores, kols });
 
 log(`@${me.username} is running`);
 await telegram.poll(bot.handleUpdate, { signal: controller.signal, log });
