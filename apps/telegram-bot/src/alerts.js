@@ -191,6 +191,7 @@ export function createAlerts(o) {
   const codeCache = new Map();
   let lastPrice = null; // USD per token from the latest buy
   let v4PoolId = o.poolId ? o.poolId.toLowerCase() : null;
+  let v4TokenIs0 = null;
 
   const call = (to, data) => o.rpc('eth_call', [{ to, data }, 'latest']);
   async function tokenMeta(addr) {
@@ -219,11 +220,12 @@ export function createAlerts(o) {
     let events = classify(receipt.logs, { token: o.token, pools: o.pools, contracts, signer: receipt.from });
     // Trades through the FOBO pool are read from the PoolManager's own Swap event: that is the
     // authority for direction, amounts and price, whatever wallet, router or aggregator was used.
-    const v4 = findV4Trade(receipt.logs, { token: o.token, poolManager: o.poolManager || FOBO_POOL_MANAGER, poolId: v4PoolId });
+    const v4 = findV4Trade(receipt.logs, { token: o.token, poolManager: o.poolManager || FOBO_POOL_MANAGER, poolId: v4PoolId, tokenIs0: v4TokenIs0 });
     if (!v4 && receipt.logs.some((l) => l?.topics?.[0] === V4_SWAP && String(l.address).toLowerCase() === (o.poolManager || FOBO_POOL_MANAGER).toLowerCase())
       && netChange(receipt.logs, t, (o.poolManager || FOBO_POOL_MANAGER).toLowerCase()) !== 0n) log(`tx ${hash}: LOCKRA moved through the PoolManager but no matching swap was found`);
     if (v4) {
       if (!v4PoolId) { v4PoolId = v4.poolId; log(`FOBO pool id ${v4PoolId}`); }
+      if (v4TokenIs0 == null) v4TokenIs0 = v4.tokenIs0;
       events = events.filter((e) => e.type !== 'buy');
       if (v4.side === 'buy' && v4.buyer && v4.buyer !== DEAD && !FOBO_SYSTEM.has(v4.buyer)) {
         events.unshift({ type: 'buy', buyer: v4.buyer, pool: null, amount: v4.amount, tx: hash, quote: { token: v4.quoteToken, value: v4.quoteAmount }, v4 });
