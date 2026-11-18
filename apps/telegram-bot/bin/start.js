@@ -10,6 +10,7 @@ import { jsonFile, createScores } from '../src/scores.js';
 import { dirname, join } from 'node:path';
 import { formatDate } from '../src/parse.js';
 import { createKols, kolsFile, dexLookup } from '../src/kols.js';
+import { createGm, gmFile } from '../src/gm.js';
 import { createServer } from 'node:http';
 
 const log = (msg) => console.log(`[lockra-bot] ${new Date().toISOString()} ${msg}`);
@@ -160,7 +161,8 @@ if (port) {
     res.writeHead(404, cors); res.end();
   }).listen(port, () => log(`kols api on :${port}/kols.json`));
 }
-const bot = createBot({ call: telegram.call, username: me.username, log, info, predictions: { chats: predictChats, store: predictionStore }, scores, kols });
+const gm = createGm({ file: gmFile(process.env.GM_FILE || join(dirname(predictionsFile), 'gm.json')), call: telegram.call, log });
+const bot = createBot({ call: telegram.call, username: me.username, log, info, predictions: { chats: predictChats, store: predictionStore }, scores, kols, gm });
 
 log(`@${me.username} is running`);
 await telegram.poll(bot.handleUpdate, { signal: controller.signal, log });
