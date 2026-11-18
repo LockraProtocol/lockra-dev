@@ -316,7 +316,7 @@ export function createBot({ call, username, sdkOptions = {}, now = Date.now, log
           const raffleUrl = info.raffleUrl || 'https://lockra.buzz/raffle';
           const text = await info[cmd.name === 'raffle' ? 'raffle' : 'stats']().catch((e) => { log(`/${cmd.name}: ${e.message}`); return null; });
           if (!text) return await reply(msg, 'Could not load the numbers right now. Please try again in a minute.');
-          return await reply(msg, text, cmd.name === 'raffle' ? { link_preview_options: { is_disabled: true }, reply_markup: { inline_keyboard: [[info.raffleEnded?.() ? { text: '🏆 See the winner', url: raffleUrl } : { text: '🔥 Burn to enter', url: raffleUrl }]] } } : {});
+          return await reply(msg, text, cmd.name === 'raffle' ? { link_preview_options: { is_disabled: true }, reply_markup: { inline_keyboard: [[info.raffleCancelled?.() ? { text: '🤝 See our collabs', url: 'https://lockra.buzz/collabs' } : info.raffleEnded?.() ? { text: '🏆 See the winner', url: raffleUrl } : { text: '🔥 Burn to enter', url: raffleUrl }]] } } : {});
         }
         case 'chatid':
           // Lets an admin find the id to put in ALERT_CHAT_IDS. Not listed in the menu.
