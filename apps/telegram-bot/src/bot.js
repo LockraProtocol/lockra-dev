@@ -48,7 +48,7 @@ const HELP = [
   '',
   '<b>KOLs</b>: /kols for the ranking. KOLs apply with /kol in a private chat.',
   '',
-  '<b>GM streaks</b>: say gm in the group every day. 7 days 🥉, 14 days 🥈, 30 days 🥇 + GM Legend title. Miss a day and it resets. /streaks · /me',
+  '<b>GM streaks</b>: say gm in the group every day. 7 days 🥉, 14 days 🥈, 30 days 🥇 + GM Legend title. Every day counts, no resets. /streaks · /me',
   '',
   '<b>Raffle</b>: /raffle for tickets and the countdown.',
   '',
