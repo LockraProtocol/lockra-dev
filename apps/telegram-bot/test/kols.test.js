@@ -13,7 +13,7 @@ function setup({ mc = 1_000_000, balance = 2_000_000 } = {}) {
   const calls = [];
   let mid = 500;
   const call = async (method, params) => { calls.push({ method, params }); return { message_id: mid++ }; };
-  let clock = Date.parse('2026-11-17T12:00:00Z');
+  let clock = Date.parse('2030-11-17T12:00:00Z'); // fixed and in the future: the SDK refuses unlock dates in the real past
   const market = { mc };
   const sdkOptions = { chain: beacon.chain, fetch: beacon.fetch };
   const kols = createKols({ file: memoryKolsFile(), call, now: () => clock, lookup: async () => ({ symbol: 'XYZ', marketCap: market.mc, chain: 'robinhood' }), balanceOf: async () => balance, admins: ['1'], groups: ['-100'], sdkOptions, newId: () => 'c' + n++ });

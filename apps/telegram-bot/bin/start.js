@@ -40,9 +40,11 @@ const tokenAddress = process.env.TOKEN_ADDRESS || '0x2fc6de9c65a620f918ca7d1191d
 const rpc = createRpc(process.env.RPC_URL || 'https://rpc.mainnet.chain.robinhood.com');
 const raffleUrl = process.env.RAFFLE_URL || 'https://lockra.buzz/strat';
 const raffleStart = Date.parse(process.env.RAFFLE_START || '2026-11-18T14:00:00Z') / 1000;
-const raffleEnd = Date.parse(process.env.RAFFLE_END || '2026-11-22T16:00:00Z') / 1000;
+const raffleEnd = Date.parse(process.env.RAFFLE_END || '2026-11-18T21:50:00Z') / 1000;
+// The STRAT raffle was cancelled on 18 Nov 2026. Set RAFFLE_CANCELLED=0 when a new raffle is configured.
+const raffleCancelled = process.env.RAFFLE_CANCELLED !== '0';
 // Burn alerts only mention the raffle (tickets, button) while it is open.
-const raffleLive = () => { const t = Date.now() / 1000; return t >= raffleStart && t < raffleEnd; };
+const raffleLive = () => { const t = Date.now() / 1000; return !raffleCancelled && t >= raffleStart && t < raffleEnd; };
 let alerts = null;
 
 const chats = (process.env.ALERT_CHAT_IDS || '').split(',').map((s) => s.trim()).filter(Boolean);
@@ -107,6 +109,7 @@ const info = createInfo({
   raffle: {
     start: raffleStart,
     end: raffleEnd,
+    cancelled: raffleCancelled,
     ticketSize: BigInt(process.env.RAFFLE_TICKET || '10000') * 10n ** 18n,
     maxPerWallet: Number(process.env.RAFFLE_MAX_TICKETS || 5),
     name: process.env.RAFFLE_NAME || 'LOCKRA × STRAT Raffle',
