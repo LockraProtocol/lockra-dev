@@ -20,6 +20,8 @@ export const COMMANDS = [
   { command: 'predict', description: 'Seal a prediction, revealed in the group later' },
   { command: 'leaderboard', description: 'Best prediction callers' },
   { command: 'kols', description: 'LOCKRA KOLs ranking: sealed calls, real track records' },
+  { command: 'streaks', description: 'GM streaks ranking in the group' },
+  { command: 'me', description: 'Your GM streak and badges' },
   { command: 'raffle', description: 'Current raffle: tickets, burns and countdown' },
   { command: 'lockra', description: '$LOCKRA price, market cap and burned' },
   { command: 'help', description: 'How LOCKRA works' },
@@ -45,6 +47,8 @@ const HELP = [
   'Then the group votes: called it or missed it. The best callers top /leaderboard 🏆',
   '',
   '<b>KOLs</b>: /kols for the ranking. KOLs apply with /kol in a private chat.',
+  '',
+  '<b>GM streaks</b>: say gm in the group every day. 7 days 🥉, 14 days 🥈, 30 days 🥇 + GM Legend title. Miss a day and it resets. /streaks · /me',
   '',
   '<b>Raffle</b>: /raffle for tickets and the countdown.',
   '',
@@ -90,7 +94,7 @@ const ERRORS = {
  *   scores?: { vote: Function, leaderboardText: Function },
  * }} options
  */
-export function createBot({ call, username, sdkOptions = {}, now = Date.now, log = () => {}, info = null, predictions = null, scores = null, kols = null }) {
+export function createBot({ call, username, sdkOptions = {}, now = Date.now, log = () => {}, info = null, predictions = null, scores = null, kols = null, gm = null }) {
   const seals = new Map(); // userId -> timestamps (ms), in memory only
 
   const reply = (msg, text, extra = {}) =>
@@ -286,6 +290,7 @@ export function createBot({ call, username, sdkOptions = {}, now = Date.now, log
     const text = msg?.text;
     if (!msg || !text) return;
     const cmd = parseCommand(text, username);
+    if (gm && (await gm.handleMessage(msg, cmd).catch((e) => { log(`gm failed: ${e?.message ?? e}`); return false; }))) return;
     if (!cmd) return;
     try {
       if (kols && (await kols.handleCommand(msg, cmd))) return;
