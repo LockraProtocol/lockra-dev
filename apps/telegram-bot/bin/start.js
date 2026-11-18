@@ -11,7 +11,9 @@ import { dirname, join } from 'node:path';
 import { formatDate } from '../src/parse.js';
 import { createKols, kolsFile, dexLookup } from '../src/kols.js';
 import { createGm, gmFile } from '../src/gm.js';
+import { createReminders, remindersFile } from '../src/reminders.js';
 import { createServer } from 'node:http';
+import { open } from 'lockra-sdk';
 
 const log = (msg) => console.log(`[lockra-bot] ${new Date().toISOString()} ${msg}`);
 
@@ -162,7 +164,9 @@ if (port) {
   }).listen(port, () => log(`kols api on :${port}/kols.json`));
 }
 const gm = createGm({ file: gmFile(process.env.GM_FILE || join(dirname(predictionsFile), 'gm.json')), call: telegram.call, log });
-const bot = createBot({ call: telegram.call, username: me.username, log, info, predictions: { chats: predictChats, store: predictionStore }, scores, kols, gm });
+const reminders = createReminders({ file: remindersFile(process.env.REMINDERS_FILE || join(dirname(predictionsFile), 'reminders.json')), call: telegram.call, open: (link) => open(link), username: me.username, log });
+reminders.run({ signal: controller.signal }).catch((e) => log(`reminders stopped: ${e.message}`));
+const bot = createBot({ call: telegram.call, username: me.username, log, info, predictions: { chats: predictChats, store: predictionStore }, scores, kols, gm, reminders });
 
 log(`@${me.username} is running`);
 await telegram.poll(bot.handleUpdate, { signal: controller.signal, log });

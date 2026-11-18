@@ -40,6 +40,7 @@ const HELP = [
   '<b>Open</b> (anywhere):',
   '<code>/open https://lockra.buzz/#c=…</code>',
   'or reply <code>/open</code> to a message that contains a capsule link.',
+  'Still sealed? Tap 🔔 <b>Notify me when it opens</b> and I will message you the moment it unlocks.',
   '',
   '<b>Predict</b> (in a private chat with me):',
   '<code>/predict 7d $LOCKRA hits 300K market cap</code>',
@@ -94,7 +95,7 @@ const ERRORS = {
  *   scores?: { vote: Function, leaderboardText: Function },
  * }} options
  */
-export function createBot({ call, username, sdkOptions = {}, now = Date.now, log = () => {}, info = null, predictions = null, scores = null, kols = null, gm = null }) {
+export function createBot({ call, username, sdkOptions = {}, now = Date.now, log = () => {}, info = null, predictions = null, scores = null, kols = null, gm = null, reminders = null }) {
   const seals = new Map(); // userId -> timestamps (ms), in memory only
 
   const reply = (msg, text, extra = {}) =>
@@ -228,7 +229,10 @@ export function createBot({ call, username, sdkOptions = {}, now = Date.now, log
       return reply(
         msg,
         `⏳ <b>Still sealed.</b>${head ? `\n${head}` : ''}\nOpens ${esc(formatDate(r.unlockAt))} (in ${humanDuration(r.secondsLeft)}).${wallet}`,
-        { reply_markup: { inline_keyboard: [[{ text: 'Watch it on lockra.buzz', url: link }]] } },
+        { reply_markup: { inline_keyboard: [
+          ...(reminders ? [[await reminders.button(link, r.unlockAt, info.label || '').catch(() => null)].filter(Boolean)] : []),
+          [{ text: 'Watch it on lockra.buzz', url: link }],
+        ].filter((row) => row.length) } },
       );
     }
     const body = r.message.length > MAX_SHOWN ? `${r.message.slice(0, MAX_SHOWN)}…` : r.message;
@@ -273,6 +277,7 @@ export function createBot({ call, username, sdkOptions = {}, now = Date.now, log
   /** Handle one Telegram update. Never throws for user-facing errors. */
   async function handleUpdate(update) {
     if (update.callback_query) {
+      if (reminders && (await reminders.handleCallback(update.callback_query).catch((e) => { log(`reminder callback failed: ${e?.message ?? e}`); return true; }))) return;
       if (kols && (await kols.handleCallback(update.callback_query).catch((e) => { log(`kol callback failed: ${e?.message ?? e}`); return true; }))) return;
       return await onVote(update.callback_query).catch((e) => log(`vote failed: ${e?.message ?? e}`));
     }
