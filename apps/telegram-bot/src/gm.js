@@ -1,5 +1,5 @@
 // GM streaks. Say gm in the group once a day (Madrid time) to keep your streak alive.
-// Miss a day and it goes back to 1. Badges at 7, 14 and 30 days; at 30 days the bot also gives a
+// Missing a day does not reset it: every day with a gm counts. Badges at 7, 14 and 30 days; at 30 days the bot also gives a
 // "GM Legend" title (admin with no permissions) so it shows next to the name in the group.
 
 import { readFile, writeFile, mkdir, rename } from 'node:fs/promises';
@@ -64,8 +64,8 @@ export function createGm({ file, call, now = Date.now, log = () => {} }) {
     const u = d.users[key] || (d.users[key] = { chatId: msg.chat.id, userId: msg.from.id, name: '', streak: 0, best: 0, last: null, total: 0, legend: false });
     u.name = nameOf(msg.from);
     if (u.last === today) return null;
-    const lost = u.last && u.last !== prevDay(today) && u.streak > 1 ? u.streak : 0;
-    u.streak = u.last === prevDay(today) ? u.streak + 1 : 1;
+    // Missing a day never resets: every day with a gm adds one.
+    u.streak += 1;
     u.last = today; u.total += 1;
     const before = u.best;
     u.best = Math.max(u.best, u.streak);
@@ -76,19 +76,17 @@ export function createGm({ file, call, now = Date.now, log = () => {} }) {
     const who = esc(u.name);
     if (unlocked.length) {
       const b = unlocked[unlocked.length - 1];
-      return [`🏅 <b>${who} unlocked ${b.emoji} ${b.name}!</b>`, `${u.streak} days of GM in a row 🔥`, legendNow ? `👑 New title in the group: <b>${LEGEND_TITLE}</b>` : null].filter(Boolean).join('\n');
+      return [`🏅 <b>${who} unlocked ${b.emoji} ${b.name}!</b>`, `${u.streak} days of GM 🔥`, legendNow ? `👑 New title in the group: <b>${LEGEND_TITLE}</b>` : null].filter(Boolean).join('\n');
     }
-    if (lost) return `☀️ GM ${who} · streak reset (was ${lost} days) 😅 Day 1 again.`;
     const next = GM_BADGES.find((b) => u.streak < b.days);
     return `☀️ GM ${who} · 🔥 ${u.streak}-day streak${badgeLine(u) ? ' ' + badgeLine(u) : ''}${next ? ` · ${next.days - u.streak} to ${next.emoji}` : ''}`;
   }
 
   async function board(chatId, n = 10) {
     const d = await file.load();
-    const today = madridDay(now()); const y = prevDay(today);
     const rows = Object.values(d.users)
       .filter((u) => String(u.chatId) === String(chatId))
-      .map((u) => ({ ...u, live: u.last === today || u.last === y ? u.streak : 0 }))
+      .map((u) => ({ ...u, live: u.streak }))
       .filter((u) => u.live > 0 || u.best >= 7)
       .sort((a, b) => b.live - a.live || b.best - a.best || b.total - a.total)
       .slice(0, n);
@@ -102,12 +100,12 @@ export function createGm({ file, call, now = Date.now, log = () => {} }) {
     const u = d.users[`${msg.chat.id}:${msg.from.id}`];
     if (!u) return `☀️ ${esc(nameOf(msg.from))}, you have no GM streak yet. Say gm to start!`;
     const today = madridDay(now());
-    const live = u.last === today || u.last === prevDay(today) ? u.streak : 0;
+    const live = u.streak;
     const next = GM_BADGES.find((b) => live < b.days);
     return [
       `☀️ <b>${esc(u.name)}</b>`,
       '',
-      `🔥 Current streak: <b>${live}</b> day${live === 1 ? '' : 's'}${u.last === today ? '' : live ? ' (say gm today to keep it!)' : ''}`,
+      `🔥 Current streak: <b>${live}</b> day${live === 1 ? '' : 's'}${u.last === today ? '' : ' (say gm today to add one!)'}`,
       `🏆 Best streak: ${u.best} days`,
       `📅 Total GMs: ${u.total}`,
       `🏅 Badges: ${badgesOf(u).map((b) => `${b.emoji} ${b.name}`).join(', ') || 'none yet'}`,

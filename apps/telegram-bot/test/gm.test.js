@@ -16,12 +16,12 @@ test('gm detection', () => {
   assert.equal(madridDay(Date.UTC(2026, 10, 18, 23, 30)), '2026-11-19');
 });
 
-test('streak grows daily, once per day, resets after a missed day', async () => {
+test('streak grows once per day and never resets', async () => {
   const { gm, msg, tick } = setup();
   assert.match(await gm.record(msg('gm')), /1-day streak/);
   assert.equal(await gm.record(msg('gm again')), null);
   tick(); assert.match(await gm.record(msg('gm')), /2-day streak/);
-  tick(2); assert.match(await gm.record(msg('gm')), /reset \(was 2 days\)/);
+  tick(3); assert.match(await gm.record(msg('gm')), /3-day streak/);
 });
 
 test('badges at 7, 14, 30 and legend title at 30', async () => {
