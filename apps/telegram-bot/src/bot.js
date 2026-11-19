@@ -14,12 +14,27 @@ const MAX_SHOWN = 3500;
 
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
+const ABOUT = [
+  '🔐 <b>What is LOCKRA?</b>',
+  '',
+  'LOCKRA is a timelock encryption protocol. You seal a message or file, pick a date, and nobody can open it before that moment: not you, not us, not anyone.',
+  '',
+  '⏳ <b>How it works:</b> your capsule is encrypted to a future round of drand, a public randomness beacon run by independent organisations. The key only exists once that round is published.',
+  '',
+  '🧰 <b>What we\'re building:</b> sealed predictions and calls, LOCKRA KOLs, provably fair raffles, collabs, an SDK for developers and this bot.',
+  '',
+  '🔥 <b>$LOCKRA:</b> launched on Fobo.fun. Burns power the raffles and every trade feeds the floor.',
+  '',
+  'No servers. No accounts. Just math.',
+].join('\n');
+
 export const COMMANDS = [
   { command: 'seal', description: 'Seal a message until a date (private chat)' },
   { command: 'open', description: 'Open a capsule or see how long is left' },
   { command: 'predict', description: 'Seal a prediction, revealed in the group later' },
   { command: 'leaderboard', description: 'Best prediction callers' },
   { command: 'kols', description: 'LOCKRA KOLs ranking: sealed calls, real track records' },
+  { command: 'about', description: 'What LOCKRA is and what we are building' },
   { command: 'streaks', description: 'GM streaks ranking in the group' },
   { command: 'me', description: 'Your GM streak and badges' },
   { command: 'raffle', description: 'Current raffle: tickets, burns and countdown' },
@@ -94,8 +109,31 @@ const ERRORS = {
  *   scores?: { vote: Function, leaderboardText: Function },
  * }} options
  */
-export function createBot({ call, username, sdkOptions = {}, now = Date.now, log = () => {}, info = null, predictions = null, scores = null, kols = null, gm = null }) {
+export function createBot({ call, username, sdkOptions = {}, now = Date.now, log = () => {}, info = null, predictions = null, scores = null, kols = null, gm = null, token = '0x2fc6de9c65a620f918ca7d1191d3afa495ca2898', buyUrl = '' }) {
   const seals = new Map(); // userId -> timestamps (ms), in memory only
+  // Welcome: one message per burst of joins (raids stay quiet), the previous welcome is deleted.
+  const welcomeState = new Map(); // chatId -> { at, messageId }
+  async function onJoin(msg) {
+    const people = msg.new_chat_members.filter((u) => !u.is_bot);
+    if (!people.length) return;
+    const st = welcomeState.get(msg.chat.id) || {};
+    if (st.at != null && now() - st.at < 60_000) return;
+    const names = people.slice(0, 3).map((u) => esc(u.first_name || u.username || 'fren')).join(', ');
+    const text = [
+      `👋 Welcome to LOCKRA${names ? `, ${names}` : ''}!`,
+      '',
+      '🔐 The first encryption protocol on Fobo.fun.',
+      '',
+      `CA: <code>${esc(token)}</code>`,
+      '',
+      'ℹ️ Use /about to learn more about LOCKRA and what we\'re building.',
+      '',
+      'Have questions? Feel free to drop them here. Our community will be happy to help!',
+    ].join('\n');
+    const sent = await call('sendMessage', { chat_id: msg.chat.id, text, parse_mode: 'HTML', link_preview_options: { is_disabled: true }, disable_notification: true });
+    if (st.messageId) call('deleteMessage', { chat_id: msg.chat.id, message_id: st.messageId }).catch(() => {});
+    welcomeState.set(msg.chat.id, { at: now(), messageId: sent?.message_id });
+  }
 
   const reply = (msg, text, extra = {}) =>
     call('sendMessage', {
@@ -287,6 +325,7 @@ export function createBot({ call, username, sdkOptions = {}, now = Date.now, log
     }
     const custom = msg?.chat.type === 'private' && (msg.entities || []).filter((e) => e.type === 'custom_emoji');
     if (custom?.length) return await reply(msg, ['😀 <b>Custom emoji for buy alerts</b>', '', 'Set this as <code>ALERT_EMOJI_ID</code> on your host:', ...[...new Set(custom.map((e) => e.custom_emoji_id))].map((id) => `<code>${esc(id)}</code>`)].join('\n')).catch((e) => log(`emoji failed: ${e?.message ?? e}`));
+    if (msg?.new_chat_members && ['group', 'supergroup'].includes(msg.chat.type)) return await onJoin(msg).catch((e) => log(`welcome failed: ${e?.message ?? e}`));
     const text = msg?.text;
     if (!msg || !text) return;
     const cmd = parseCommand(text, username);
@@ -309,6 +348,8 @@ export function createBot({ call, username, sdkOptions = {}, now = Date.now, log
         case 'top':
           if (!scores) return;
           return await reply(msg, await scores.leaderboardText());
+        case 'about':
+          return await reply(msg, ABOUT, { link_preview_options: { is_disabled: true }, reply_markup: { inline_keyboard: [[{ text: '🔒 Seal a capsule', url: 'https://lockra.buzz/seal' }, { text: '🛒 Buy $LOCKRA', url: buyUrl || `https://fobo.fun/?token=${token}` }]] } });
         case 'raffle':
         case 'lockra':
         case 'stats': {
