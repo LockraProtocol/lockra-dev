@@ -38,11 +38,11 @@ for (const sig of ['SIGINT', 'SIGTERM']) {
 const explorer = process.env.EXPLORER_URL || 'https://robinhoodchain.blockscout.com';
 const tokenAddress = process.env.TOKEN_ADDRESS || '0x2fc6de9c65a620f918ca7d1191d3afa495ca2898';
 const rpc = createRpc(process.env.RPC_URL || 'https://rpc.mainnet.chain.robinhood.com');
-const raffleUrl = process.env.RAFFLE_URL || 'https://lockra.buzz/collabs';
+const raffleUrl = process.env.RAFFLE_URL || 'https://lockra.buzz/lockra-raffle';
 const raffleStart = Date.parse(process.env.RAFFLE_START || '2026-11-18T14:00:00Z') / 1000;
-const raffleEnd = Date.parse(process.env.RAFFLE_END || '2026-11-18T21:50:00Z') / 1000;
-// The last raffle was cancelled on 18 Nov 2026. Set RAFFLE_CANCELLED=0 when a new raffle is configured.
-const raffleCancelled = process.env.RAFFLE_CANCELLED !== '0';
+const raffleEnd = Date.parse(process.env.RAFFLE_END || '2026-11-22T16:00:00Z') / 1000;
+// Set RAFFLE_CANCELLED=1 to switch the raffle off.
+const raffleCancelled = process.env.RAFFLE_CANCELLED === '1';
 // Burn alerts only mention the raffle (tickets, button) while it is open.
 const raffleLive = () => { const t = Date.now() / 1000; return !raffleCancelled && t >= raffleStart && t < raffleEnd; };
 let alerts = null;
@@ -113,7 +113,7 @@ const info = createInfo({
     ticketSize: BigInt(process.env.RAFFLE_TICKET || '10000') * 10n ** 18n,
     maxPerWallet: Number(process.env.RAFFLE_MAX_TICKETS || 5),
     name: process.env.RAFFLE_NAME || 'LOCKRA Raffle',
-    prize: process.env.RAFFLE_PRIZE || '',
+    prize: process.env.RAFFLE_PRIZE || '$50 in $LOCKRA by LOCKRA + $50 in $COCA by COCA',
     // Set RAFFLE_WINNER (wallet) and RAFFLE_WINNER_TICKET after the draw on the raffle page.
     winner: process.env.RAFFLE_WINNER ? { ticket: process.env.RAFFLE_WINNER_TICKET || '', wallet: process.env.RAFFLE_WINNER } : null,
   },
