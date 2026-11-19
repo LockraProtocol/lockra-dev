@@ -165,7 +165,7 @@ if (port) {
   }).listen(port, () => log(`kols api on :${port}/kols.json`));
 }
 const gm = createGm({ file: gmFile(process.env.GM_FILE || join(dirname(predictionsFile), 'gm.json')), call: telegram.call, log });
-const bot = createBot({ call: telegram.call, username: me.username, log, info, predictions: { chats: predictChats, store: predictionStore }, scores, kols, gm });
+const bot = createBot({ call: telegram.call, username: me.username, log, info, predictions: { chats: predictChats, store: predictionStore }, scores, kols, gm, token: tokenAddress, buyUrl: process.env.BUY_URL || '' });
 
 log(`@${me.username} is running`);
 await telegram.poll(bot.handleUpdate, { signal: controller.signal, log });
