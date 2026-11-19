@@ -34,7 +34,7 @@ export const COMMANDS = [
   { command: 'predict', description: 'Seal a prediction, revealed in the group later' },
   { command: 'leaderboard', description: 'Best prediction callers' },
   { command: 'kols', description: 'LOCKRA KOLs ranking: sealed calls, real track records' },
-  { command: 'about', description: 'What LOCKRA is and what we are building' },
+  { command: 'learn', description: 'What LOCKRA is and what we are building' },
   { command: 'streaks', description: 'GM streaks ranking in the group' },
   { command: 'me', description: 'Your GM streak and badges' },
   { command: 'raffle', description: 'Current raffle: tickets, burns and countdown' },
@@ -126,7 +126,7 @@ export function createBot({ call, username, sdkOptions = {}, now = Date.now, log
       '',
       `CA: <code>${esc(token)}</code>`,
       '',
-      'ℹ️ Use /about to learn more about LOCKRA and what we\'re building.',
+      'ℹ️ Use /learn to learn more about LOCKRA and what we\'re building.',
       '',
       'Have questions? Feel free to drop them here. Our community will be happy to help!',
     ].join('\n');
@@ -348,7 +348,7 @@ export function createBot({ call, username, sdkOptions = {}, now = Date.now, log
         case 'top':
           if (!scores) return;
           return await reply(msg, await scores.leaderboardText());
-        case 'about':
+        case 'learn':
           return await reply(msg, ABOUT, { link_preview_options: { is_disabled: true }, reply_markup: { inline_keyboard: [[{ text: '🔒 Seal a capsule', url: 'https://lockra.buzz/seal' }, { text: '🛒 Buy $LOCKRA', url: buyUrl || `https://fobo.fun/?token=${token}` }]] } });
         case 'raffle':
         case 'lockra':
