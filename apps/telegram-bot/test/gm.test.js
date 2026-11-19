@@ -41,7 +41,7 @@ test('ignores private chats and bots', async () => {
   assert.equal(await gm.handleMessage({ text: 'gm', chat: { id: -1, type: 'group' }, from: { id: 2, is_bot: true } }, null), false);
 });
 
-test('welcome message once per burst, with the CA and /about', async () => {
+test('welcome message once per burst, with the CA and /info', async () => {
   const { createBot } = await import('../src/bot.js');
   let t = 0; const calls = [];
   const bot = createBot({ call: async (m, p) => { calls.push([m, p]); return { message_id: calls.length }; }, username: 'Lockra_bot', now: () => t, token: '0xabc' });
@@ -49,7 +49,7 @@ test('welcome message once per burst, with the CA and /about', async () => {
   await bot.handleUpdate(join(1)); await bot.handleUpdate(join(2));
   const sends = calls.filter(([m]) => m === 'sendMessage');
   assert.equal(sends.length, 1);
-  assert.match(sends[0][1].text, /Welcome to LOCKRA, U1![\s\S]*CA: <code>0xabc<\/code>[\s\S]*\/about/);
+  assert.match(sends[0][1].text, /Welcome to LOCKRA, U1![\s\S]*CA: <code>0xabc<\/code>[\s\S]*\/info/);
   t = 61_000; await bot.handleUpdate(join(3));
   assert.ok(calls.some(([m, p]) => m === 'deleteMessage' && p.message_id === 1));
 });
