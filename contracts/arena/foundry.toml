@@ -1,0 +1,17 @@
+[profile.default]
+src = "src"
+test = "test"
+script = "script"
+out = "out"
+libs = ["lib"]
+solc_version = "0.8.26"
+evm_version = "cancun"
+optimizer = true
+optimizer_runs = 10_000
+remappings = ["forge-std/=lib/forge-std/src/"]
+
+[fuzz]
+runs = 1_000
+
+[fmt]
+line_length = 120
