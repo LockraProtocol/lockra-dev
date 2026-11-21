@@ -13,7 +13,8 @@ import { createKols, kolsFile, dexLookup } from '../src/kols.js';
 import { createGm, gmFile } from '../src/gm.js';
 import { createReminders, remindersFile } from '../src/reminders.js';
 import { createServer } from 'node:http';
-import { open } from 'lockra-sdk';
+import { open, seal } from 'lockra-sdk';
+import { createDaily, dailyFile, createDailyPrice } from '../src/daily.js';
 
 const log = (msg) => console.log(`[lockra-bot] ${new Date().toISOString()} ${msg}`);
 
@@ -169,7 +170,17 @@ if (port) {
 const gm = createGm({ file: gmFile(process.env.GM_FILE || join(dirname(predictionsFile), 'gm.json')), call: telegram.call, log });
 const reminders = createReminders({ file: remindersFile(process.env.REMINDERS_FILE || join(dirname(predictionsFile), 'reminders.json')), call: telegram.call, open: (link) => open(link), username: me.username, log });
 reminders.run({ signal: controller.signal }).catch((e) => log(`reminders stopped: ${e.message}`));
-const bot = createBot({ call: telegram.call, username: me.username, log, info, predictions: { chats: predictChats, store: predictionStore }, scores, kols, gm, token: tokenAddress, buyUrl: process.env.BUY_URL || '', reminders });
+// Daily Prediction: one sealed up-or-down call a day in the prediction chats.
+const daily = predictChats.length ? createDaily({
+  file: dailyFile(process.env.DAILY_FILE || join(dirname(predictionsFile), 'daily.json')),
+  call: telegram.call,
+  chats: predictChats,
+  price: createDailyPrice({ lookup: dexLookup(), token: tokenAddress }),
+  seal: async (text, unlockAt) => (await seal(text, { unlockAt, label: 'Daily Prediction votes', by: 'LOCKRA' })).link,
+  log,
+}) : null;
+daily?.run({ signal: controller.signal }).catch((e) => log(`daily stopped: ${e.message}`));
+const bot = createBot({ call: telegram.call, username: me.username, log, info, predictions: { chats: predictChats, store: predictionStore }, scores, kols, gm, token: tokenAddress, buyUrl: process.env.BUY_URL || '', reminders, daily });
 
 log(`@${me.username} is running`);
 await telegram.poll(bot.handleUpdate, { signal: controller.signal, log });

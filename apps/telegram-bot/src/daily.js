@@ -1,0 +1,308 @@
+// Daily Prediction: one up-or-down question a day in the group.
+//
+//   10:00 Madrid   the bot asks "Will ETH be higher or lower tomorrow at 10:00?" with two buttons.
+//   +3 hours       voting closes. Every vote is sealed in a LOCKRA capsule that opens at the result,
+//                  so the votes are public and provable but nobody can read them early.
+//   +24 hours      the bot checks the price, opens the capsule and scores everyone.
+//
+// Correct calls climb a rank ladder (Rookie → LOCKRA Legend). At LOCKRA Legend a player can
+// /prestige: back to Rookie with a permanent star, like a prestige in a shooter.
+
+import { readFile, writeFile, mkdir, rename } from 'node:fs/promises';
+import { dirname } from 'node:path';
+import { randomBytes } from 'node:crypto';
+
+const HOUR = 3_600_000;
+const DAY = 24 * HOUR;
+const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+export const RANKS = [
+  { wins: 1, id: 'rookie', name: 'Rookie', emoji: '🌱' },
+  { wins: 5, id: 'seer', name: 'Seer', emoji: '👁️' },
+  { wins: 10, id: 'oracle', name: 'Oracle', emoji: '🔮' },
+  { wins: 25, id: 'prophet', name: 'Prophet', emoji: '⚡' },
+  { wins: 50, id: 'visionary', name: 'Visionary', emoji: '💎' },
+  { wins: 100, id: 'timekeeper', name: 'Timekeeper', emoji: '⏳' },
+  { wins: 250, id: 'legend', name: 'LOCKRA Legend', emoji: '👑' },
+];
+export const PRESTIGE = ['', '⭐', '⭐⭐', '🌟', '🔱'];
+export const MAX_PRESTIGE = PRESTIGE.length - 1;
+export const BADGES = {
+  sniper: { emoji: '🎯', name: 'Sniper', rule: '5 correct calls in a row' },
+  fire: { emoji: '🔥', name: 'On Fire', rule: '10 correct calls in a row' },
+  ice: { emoji: '🧊', name: 'Ice Cold', rule: 'right when at least 80% of the group was wrong' },
+  devotee: { emoji: '📅', name: 'Daily Devotee', rule: 'voted 30 days in a row' },
+};
+export const ASSETS = [
+  { id: 'ETH', label: 'ETH' },
+  { id: 'BTC', label: 'BTC' },
+  { id: 'LOCKRA', label: '$LOCKRA market cap' },
+];
+
+/** Rank for a number of wins (null before the first win). */
+export const rankFor = (wins) => [...RANKS].reverse().find((r) => wins >= r.wins) || null;
+
+/** Midnight-based helpers in Madrid time. */
+const madrid = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Madrid', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+export function madridParts(ms) {
+  const p = Object.fromEntries(madrid.formatToParts(new Date(ms)).map((x) => [x.type, x.value]));
+  return { day: `${p.year}-${p.month}-${p.day}`, hour: Number(p.hour), minute: Number(p.minute) };
+}
+const prevDay = (day) => { const d = new Date(`${day}T12:00:00Z`); d.setUTCDate(d.getUTCDate() - 1); return d.toISOString().slice(0, 10); };
+
+export function dailyFile(path) {
+  let data = null; let chain = Promise.resolve();
+  return {
+    async load() {
+      if (data) return data;
+      try { data = JSON.parse(await readFile(path, 'utf8')); } catch { data = null; }
+      if (!data || !data.rounds || !data.users) data = { rounds: {}, users: {} };
+      return data;
+    },
+    save() {
+      chain = chain.then(async () => { await mkdir(dirname(path), { recursive: true }); await writeFile(`${path}.tmp`, JSON.stringify(data)); await rename(`${path}.tmp`, path); });
+      return chain;
+    },
+  };
+}
+export function memoryDailyFile() { const d = { rounds: {}, users: {} }; return { load: async () => d, save: async () => {} }; }
+
+const fmtPrice = (n) => (n >= 1000 ? `$${Math.round(n).toLocaleString('en-US')}` : n >= 1 ? `$${n.toFixed(2)}` : `$${n.toPrecision(3)}`);
+
+/**
+ * @param {{ file: object, call: Function, chats: string[], price: (asset: string) => Promise<number|null>,
+ *   seal?: (text: string, unlockAt: Date) => Promise<string>, now?: () => number, log?: Function,
+ *   openHour?: number, voteHours?: number, site?: string, newId?: () => string }} o
+ */
+export function createDaily(o) {
+  const { file, call, chats, price } = o;
+  const now = o.now || Date.now;
+  const log = o.log || (() => {});
+  const openHour = o.openHour ?? 10;
+  const voteMs = (o.voteHours ?? 3) * HOUR;
+  const site = o.site || 'https://lockra.buzz';
+  const newId = o.newId || (() => randomBytes(4).toString('hex'));
+  const nameOf = (f) => (f.username ? `@${f.username}` : [f.first_name, f.last_name].filter(Boolean).join(' ') || 'anon');
+  const send = (chat, text, extra = {}) => call('sendMessage', { chat_id: chat, text, parse_mode: 'HTML', link_preview_options: { is_disabled: true }, ...extra });
+
+  const keyboard = (r) => r.closed
+    ? { inline_keyboard: [[{ text: `🔒 Votes sealed · ${Object.keys(r.votes).length}`, callback_data: `dp:${r.id}:x` }]] }
+    : { inline_keyboard: [[{ text: '⬆️ Higher', callback_data: `dp:${r.id}:u` }, { text: '⬇️ Lower', callback_data: `dp:${r.id}:d` }], [{ text: `🗳 ${Object.keys(r.votes).length} sealed votes`, callback_data: `dp:${r.id}:x` }]] };
+
+  const user = (d, from) => {
+    const u = d.users[from.id] || (d.users[from.id] = { id: from.id, name: '', wins: 0, total: 0, prestige: 0, streak: 0, best: 0, voteStreak: 0, lastVoteDay: null, badges: [] });
+    u.name = nameOf(from);
+    return u;
+  };
+  const tag = (u) => {
+    const r = rankFor(u.wins);
+    return `${PRESTIGE[u.prestige] ? PRESTIGE[u.prestige] + ' ' : ''}${r ? `${r.emoji} ${r.name}` : 'Unranked'}`;
+  };
+
+  /** Open today's round if it is time and none exists yet. */
+  async function openRound() {
+    const d = await file.load();
+    const t = now(); const p = madridParts(t);
+    if (p.hour < openHour || Object.values(d.rounds).some((r) => r.day === p.day)) return null;
+    const dayIndex = Math.floor(Date.parse(`${p.day}T00:00:00Z`) / DAY);
+    const asset = ASSETS[dayIndex % ASSETS.length];
+    const start = await price(asset.id).catch(() => null);
+    if (!(start > 0)) { log(`daily: no price for ${asset.id}`); return null; }
+    const r = { id: newId(), day: p.day, asset: asset.id, label: asset.label, start, openedAt: t, closesAt: t + voteMs, resolvesAt: t + DAY, votes: {}, closed: false, resolved: false, messages: {}, capsule: null };
+    d.rounds[r.id] = r;
+    await file.save();
+    for (const chat of chats) {
+      const text = [
+        '🔮 <b>Daily Prediction</b>',
+        '',
+        `Will <b>${r.label}</b> be higher or lower than <b>${fmtPrice(start)}</b> tomorrow at ${String(openHour).padStart(2, '0')}:00 CET?`,
+        '',
+        `🔒 Votes are sealed: nobody sees what anyone picked until the result. Voting closes in ${Math.round(voteMs / HOUR)}h.`,
+        '🏅 Correct calls climb the ranks. /ranks · /rank',
+      ].join('\n');
+      const m = await send(chat, text, { reply_markup: keyboard(r) }).catch((e) => log(`daily send failed: ${e.message}`));
+      if (m?.message_id) r.messages[chat] = m.message_id;
+    }
+    await file.save();
+    return r;
+  }
+
+  async function handleCallback(q) {
+    const m = /^dp:([0-9a-f]+):([udx])$/.exec(q?.data || '');
+    if (!m) return false;
+    const answer = (text) => call('answerCallbackQuery', { callback_query_id: q.id, text }).catch(() => {});
+    const d = await file.load();
+    const r = d.rounds[m[1]];
+    if (!r) { await answer('This prediction is no longer available.'); return true; }
+    if (m[2] === 'x') { await answer(r.closed ? 'Voting is closed. Votes open with the result.' : 'Votes stay sealed until the result 🔒'); return true; }
+    if (r.closed || now() >= r.closesAt) { await answer('Voting is closed for today. Next one tomorrow at 10:00 CET!'); return true; }
+    const u = user(d, q.from);
+    const pick = m[2];
+    const before = r.votes[q.from.id];
+    r.votes[q.from.id] = pick;
+    if (!before) {
+      u.voteStreak = u.lastVoteDay === prevDay(r.day) ? u.voteStreak + 1 : 1;
+      u.lastVoteDay = r.day;
+      if (u.voteStreak >= 30 && !u.badges.includes('devotee')) u.badges.push('devotee');
+    }
+    await file.save();
+    await answer(`${before ? 'Changed' : 'Sealed'}: ${pick === 'u' ? '⬆️ Higher' : '⬇️ Lower'} 🔒`);
+    for (const [chat, mid] of Object.entries(r.messages)) call('editMessageReplyMarkup', { chat_id: chat, message_id: mid, reply_markup: keyboard(r) }).catch(() => {});
+    return true;
+  }
+
+  /** Close voting and seal the votes in a LOCKRA capsule that opens with the result. */
+  async function closeRound(r) {
+    r.closed = true;
+    const list = Object.entries(r.votes).map(([id, v]) => `${id}:${v}`).sort().join(',');
+    if (o.seal && list) {
+      try { r.capsule = await o.seal(`LOCKRA Daily Prediction ${r.day} · ${r.label} from ${r.start} · votes ${list}`, new Date(r.resolvesAt)); } catch (e) { log(`daily seal failed: ${e.message}`); }
+    }
+    for (const [chat, mid] of Object.entries(r.messages)) call('editMessageReplyMarkup', { chat_id: chat, message_id: mid, reply_markup: keyboard(r) }).catch(() => {});
+    if (r.capsule) for (const chat of chats) await send(chat, `🔒 <b>Today's ${esc(r.label)} prediction is closed.</b> ${Object.keys(r.votes).length} votes are sealed in a LOCKRA capsule that opens with the result.`, { reply_markup: { inline_keyboard: [[{ text: 'See the sealed votes', url: r.capsule }]] } }).catch(() => {});
+  }
+
+  /** Score the round. Returns rank-ups so the caller can celebrate them. */
+  async function resolveRound(d, r) {
+    const end = await price(r.asset).catch(() => null);
+    if (!(end > 0)) return false;
+    r.end = end; r.resolved = true;
+    const outcome = end > r.start ? 'u' : end < r.start ? 'd' : null;
+    r.outcome = outcome;
+    const voters = Object.entries(r.votes);
+    const winners = outcome ? voters.filter(([, v]) => v === outcome).map(([id]) => id) : [];
+    const wrongShare = voters.length ? (voters.length - winners.length) / voters.length : 0;
+    const ups = [];
+    for (const [id, v] of voters) {
+      const u = d.users[id]; if (!u) continue;
+      if (!outcome) continue; // flat price: nobody scores, nobody loses a streak
+      u.total += 1;
+      if (v === outcome) {
+        const was = rankFor(u.wins);
+        u.wins += 1; u.streak += 1; u.best = Math.max(u.best, u.streak);
+        const got = [];
+        if (u.streak >= 5 && !u.badges.includes('sniper')) { u.badges.push('sniper'); got.push('sniper'); }
+        if (u.streak >= 10 && !u.badges.includes('fire')) { u.badges.push('fire'); got.push('fire'); }
+        if (voters.length >= 5 && wrongShare >= 0.8 && !u.badges.includes('ice')) { u.badges.push('ice'); got.push('ice'); }
+        const is = rankFor(u.wins);
+        if (is && is !== was) ups.push({ u, rank: is });
+        for (const b of got) ups.push({ u, badge: b });
+      } else {
+        u.streak = 0;
+      }
+    }
+    await file.save();
+    const dir = outcome === 'u' ? '⬆️ HIGHER' : outcome === 'd' ? '⬇️ LOWER' : '➡️ FLAT';
+    const text = [
+      '🔓 <b>Daily Prediction result</b>',
+      '',
+      `${esc(r.label)}: ${fmtPrice(r.start)} → <b>${fmtPrice(end)}</b> · ${dir}`,
+      voters.length ? `✅ ${winners.length} called it · ❌ ${voters.length - winners.length} missed` : 'Nobody voted this time.',
+      outcome ? '' : 'Flat price: no points this round.',
+      'New question today at 10:00 CET 👀',
+    ].filter((l) => l !== '').join('\n');
+    const buttons = r.capsule ? { reply_markup: { inline_keyboard: [[{ text: '🔓 Verify the sealed votes', url: r.capsule }]] } } : {};
+    for (const chat of chats) await send(chat, text, buttons).catch(() => {});
+    for (const up of ups) await celebrate(up).catch((e) => log(`daily celebrate failed: ${e.message}`));
+    return true;
+  }
+
+  async function celebrate({ u, rank, badge }) {
+    for (const chat of chats) {
+      if (rank) {
+        await call('sendPhoto', {
+          chat_id: chat,
+          photo: `${site}/img/ranks/${rank.id}.jpg`,
+          caption: `🏅 <b>${esc(u.name)}</b> reached ${rank.emoji} <b>${rank.name}</b> with ${u.wins} correct call${u.wins === 1 ? '' : 's'}!${rank.id === 'legend' && u.prestige < MAX_PRESTIGE ? '\n\nType /prestige to start over with a permanent star ⭐' : ''}`,
+          parse_mode: 'HTML',
+        }).catch((e) => log(`daily photo failed: ${e.message}`));
+      } else if (badge) {
+        const b = BADGES[badge];
+        await send(chat, `${b.emoji} <b>${esc(u.name)}</b> unlocked <b>${b.name}</b>: ${b.rule}!`).catch(() => {});
+      }
+    }
+  }
+
+  /** Run whatever is due. Safe to call often. */
+  async function tick() {
+    await openRound();
+    const d = await file.load();
+    for (const r of Object.values(d.rounds)) {
+      if (!r.closed && now() >= r.closesAt) { await closeRound(r); await file.save(); }
+      if (r.closed && !r.resolved && now() >= r.resolvesAt) await resolveRound(d, r);
+    }
+    for (const [id, r] of Object.entries(d.rounds)) if (r.resolved && now() - r.resolvesAt > 7 * DAY) delete d.rounds[id];
+    await file.save();
+  }
+
+  async function run({ signal, every = 30_000 } = {}) {
+    while (!signal?.aborted) {
+      await tick().catch((e) => log(`daily tick failed: ${e?.message ?? e}`));
+      await new Promise((res) => { const t = setTimeout(res, every); signal?.addEventListener('abort', () => { clearTimeout(t); res(); }, { once: true }); });
+    }
+  }
+
+  async function profile(from) {
+    const d = await file.load();
+    const u = d.users[from.id];
+    if (!u || !u.total && !Object.values(d.rounds).some((r) => r.votes[from.id])) return `🔮 ${esc(nameOf(from))}, you haven't made a Daily Prediction yet. Next one at 10:00 CET!`;
+    const r = rankFor(u.wins);
+    const next = RANKS.find((x) => x.wins > u.wins);
+    return [
+      `🔮 <b>${esc(u.name)}</b>`,
+      `${tag(u)}${u.badges.length ? ' · ' + u.badges.map((b) => BADGES[b].emoji).join('') : ''}`,
+      '',
+      `✅ ${u.wins} correct · ${u.total ? Math.round((u.wins / u.total) * 100) : 0}% hit rate`,
+      `🔥 ${u.streak} in a row (best ${u.best})`,
+      next ? `Next: ${next.emoji} ${next.name} at ${next.wins} wins` : r && u.prestige < MAX_PRESTIGE ? 'Max rank reached. /prestige to start over with a star ⭐' : '🔱 Master Prestige. Absolute legend.',
+    ].join('\n');
+  }
+
+  async function board(n = 10) {
+    const d = await file.load();
+    const rows = Object.values(d.users).filter((u) => u.total > 0)
+      .sort((a, b) => b.prestige - a.prestige || b.wins - a.wins || b.wins / b.total - a.wins / a.total).slice(0, n);
+    if (!rows.length) return '🔮 <b>Prediction ranks</b>\n\nNo calls scored yet. The Daily Prediction goes live every day at 10:00 CET.';
+    const medal = (i) => ['🥇', '🥈', '🥉'][i] || `${i + 1}.`;
+    return ['🔮 <b>Prediction ranks</b>', '', ...rows.map((u, i) => `${medal(i)} ${esc(u.name)} · ${tag(u)} · <b>${u.wins}</b> wins`), '', RANKS.map((x) => `${x.emoji} ${x.wins}`).join(' · ')].join('\n');
+  }
+
+  async function prestige(from) {
+    const d = await file.load();
+    const u = d.users[from.id];
+    if (!u || u.wins < RANKS.at(-1).wins) return `👑 You need ${RANKS.at(-1).wins} correct calls (LOCKRA Legend) to prestige.`;
+    if (u.prestige >= MAX_PRESTIGE) return '🔱 You are already at Master Prestige.';
+    u.prestige += 1; u.wins = 0; u.streak = 0;
+    await file.save();
+    return `${PRESTIGE[u.prestige]} <b>${esc(u.name)}</b> entered Prestige ${u.prestige}! Back to 🌱 Rookie, star kept forever.`;
+  }
+
+  /** Handle /daily, /rank, /ranks, /prestige. Returns true when handled. */
+  async function handleMessage(msg, cmd) {
+    if (!cmd || !msg?.from) return false;
+    const reply = (text) => call('sendMessage', { chat_id: msg.chat.id, text, parse_mode: 'HTML', reply_parameters: { message_id: msg.message_id, allow_sending_without_reply: true } });
+    if (cmd.name === 'rank') { await reply(await profile(msg.from)); return true; }
+    if (cmd.name === 'ranks') { await reply(await board()); return true; }
+    if (cmd.name === 'prestige') { await reply(await prestige(msg.from)); return true; }
+    if (cmd.name === 'daily') {
+      const d = await file.load();
+      const r = Object.values(d.rounds).filter((x) => !x.resolved).sort((a, b) => b.openedAt - a.openedAt)[0];
+      await reply(r ? (r.closed ? `🔒 Today's ${esc(r.label)} prediction is closed. Result at 10:00 CET.` : `🔮 Today's question: will ${esc(r.label)} be higher or lower than ${fmtPrice(r.start)} tomorrow at 10:00 CET? Vote on today's question above 👆`) : '🔮 The Daily Prediction goes live every day at 10:00 CET.');
+      return true;
+    }
+    return false;
+  }
+
+  return { tick, run, handleCallback, handleMessage, profile, board, prestige, openRound };
+}
+
+/** ETH and BTC from CoinGecko, $LOCKRA market cap from DexScreener (up/down is the same either way). */
+export function createDailyPrice({ fetchFn = globalThis.fetch, lookup, token }) {
+  return async (asset) => {
+    if (asset === 'LOCKRA') return (await lookup(token))?.marketCap ?? null;
+    const id = asset === 'BTC' ? 'bitcoin' : 'ethereum';
+    const r = await fetchFn(`https://api.coingecko.com/api/v3/simple/price?ids=${id}&vs_currencies=usd`, { signal: AbortSignal.timeout(8000) });
+    const j = await r.json();
+    return Number(j?.[id]?.usd) || null;
+  };
+}
