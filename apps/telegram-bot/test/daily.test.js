@@ -17,8 +17,9 @@ function setup({ prices = [100, 110] } = {}) {
 test('ranks ladder', () => {
   assert.equal(rankFor(0), null);
   assert.equal(rankFor(1).name, 'Rookie');
-  assert.equal(rankFor(9).name, 'Seer');
-  assert.equal(rankFor(250).name, 'LOCKRA Legend');
+  assert.equal(rankFor(6).name, 'Seer');
+  assert.equal(rankFor(7).name, 'Oracle');
+  assert.equal(rankFor(60).name, 'LOCKRA Legend');
   assert.equal(madridParts(T0).hour, 10);
 });
 
@@ -34,7 +35,7 @@ test('sealed votes, close, resolve and score', async () => {
   const s = setup({ prices: [100, 110] });
   s.at(T0); await s.daily.tick();
   await s.vote(1, 'u'); await s.vote(2, 'd'); await s.vote(2, 'u'); await s.vote(3, 'd');
-  s.at(T0 + 3 * HOUR + 1); await s.daily.tick();
+  s.at(T0 + 5 * HOUR + 1); await s.daily.tick();
   assert.equal(s.sent(/votes are sealed in a LOCKRA capsule/).length, 1);
   const late = await s.vote(4, 'u');
   assert.ok(late);
@@ -48,5 +49,5 @@ test('sealed votes, close, resolve and score', async () => {
 
 test('prestige needs LOCKRA Legend and resets wins with a star', async () => {
   const s = setup();
-  assert.match(await s.daily.prestige({ id: 9 }), /need 250/);
+  assert.match(await s.daily.prestige({ id: 9 }), /need 60/);
 });

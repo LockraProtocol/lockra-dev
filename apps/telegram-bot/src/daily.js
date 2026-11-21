@@ -1,7 +1,7 @@
 // Daily Prediction: one up-or-down question a day in the group.
 //
 //   10:00 Madrid   the bot asks "Will ETH be higher or lower tomorrow at 10:00?" with two buttons.
-//   +3 hours       voting closes. Every vote is sealed in a LOCKRA capsule that opens at the result,
+//   +5 hours       voting closes. Every vote is sealed in a LOCKRA capsule that opens at the result,
 //                  so the votes are public and provable but nobody can read them early.
 //   +24 hours      the bot checks the price, opens the capsule and scores everyone.
 //
@@ -18,12 +18,12 @@ const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').
 
 export const RANKS = [
   { wins: 1, id: 'rookie', name: 'Rookie', emoji: '🌱' },
-  { wins: 5, id: 'seer', name: 'Seer', emoji: '👁️' },
-  { wins: 10, id: 'oracle', name: 'Oracle', emoji: '🔮' },
-  { wins: 25, id: 'prophet', name: 'Prophet', emoji: '⚡' },
-  { wins: 50, id: 'visionary', name: 'Visionary', emoji: '💎' },
-  { wins: 100, id: 'timekeeper', name: 'Timekeeper', emoji: '⏳' },
-  { wins: 250, id: 'legend', name: 'LOCKRA Legend', emoji: '👑' },
+  { wins: 3, id: 'seer', name: 'Seer', emoji: '👁️' },
+  { wins: 7, id: 'oracle', name: 'Oracle', emoji: '🔮' },
+  { wins: 15, id: 'prophet', name: 'Prophet', emoji: '⚡' },
+  { wins: 25, id: 'visionary', name: 'Visionary', emoji: '💎' },
+  { wins: 40, id: 'timekeeper', name: 'Timekeeper', emoji: '⏳' },
+  { wins: 60, id: 'legend', name: 'LOCKRA Legend', emoji: '👑' },
 ];
 export const PRESTIGE = ['', '⭐', '⭐⭐', '🌟', '🔱'];
 export const MAX_PRESTIGE = PRESTIGE.length - 1;
@@ -79,7 +79,7 @@ export function createDaily(o) {
   const now = o.now || Date.now;
   const log = o.log || (() => {});
   const openHour = o.openHour ?? 10;
-  const voteMs = (o.voteHours ?? 3) * HOUR;
+  const voteMs = (o.voteHours ?? 5) * HOUR;
   const site = o.site || 'https://lockra.buzz';
   const newId = o.newId || (() => randomBytes(4).toString('hex'));
   const nameOf = (f) => (f.username ? `@${f.username}` : [f.first_name, f.last_name].filter(Boolean).join(' ') || 'anon');
