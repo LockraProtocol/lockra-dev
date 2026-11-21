@@ -35,6 +35,8 @@ export const COMMANDS = [
   { command: 'leaderboard', description: 'Best prediction callers' },
   { command: 'kols', description: 'LOCKRA KOLs ranking: sealed calls, real track records' },
   { command: 'learn', description: 'What LOCKRA is and what we are building' },
+  { command: 'rank', description: 'Your Daily Prediction rank and badges' },
+  { command: 'ranks', description: 'Daily Prediction leaderboard' },
   { command: 'streaks', description: 'GM streaks ranking in the group' },
   { command: 'me', description: 'Your GM streak and badges' },
   { command: 'raffle', description: 'Current raffle: tickets, burns and countdown' },
@@ -63,6 +65,8 @@ const HELP = [
   'Then the group votes: called it or missed it. The best callers top /leaderboard 🏆',
   '',
   '<b>KOLs</b>: /kols for the ranking. KOLs apply with /kol in a private chat.',
+  '',
+  '<b>Daily Prediction</b>: every day at 10:00 CET, call ETH, BTC or $LOCKRA up or down. Votes are sealed. Correct calls climb the ranks: 🌱 Rookie (1) → 👁️ Seer (3) → 🔮 Oracle (7) → ⚡ Prophet (15) → 💎 Visionary (25) → ⏳ Timekeeper (40) → 👑 LOCKRA Legend (60), then /prestige. /rank · /ranks',
   '',
   '<b>GM streaks</b>: say gm in the group every day. 7 days 🥉, 14 days 🥈, 30 days 🥇 + GM Legend title. Every day counts, no resets. /streaks · /me',
   '',
@@ -110,7 +114,7 @@ const ERRORS = {
  *   scores?: { vote: Function, leaderboardText: Function },
  * }} options
  */
-export function createBot({ call, username, sdkOptions = {}, now = Date.now, log = () => {}, info = null, predictions = null, scores = null, kols = null, gm = null, token = '0x2fc6de9c65a620f918ca7d1191d3afa495ca2898', buyUrl = '' , reminders = null }) {
+export function createBot({ call, username, sdkOptions = {}, now = Date.now, log = () => {}, info = null, predictions = null, scores = null, kols = null, gm = null, token = '0x2fc6de9c65a620f918ca7d1191d3afa495ca2898', buyUrl = '', reminders = null, daily = null }) {
   const seals = new Map(); // userId -> timestamps (ms), in memory only
   // Welcome: one message per burst of joins (raids stay quiet), the previous welcome is deleted.
   const welcomeState = new Map(); // chatId -> { at, messageId }
@@ -315,6 +319,7 @@ export function createBot({ call, username, sdkOptions = {}, now = Date.now, log
   /** Handle one Telegram update. Never throws for user-facing errors. */
   async function handleUpdate(update) {
     if (update.callback_query) {
+      if (daily && (await daily.handleCallback(update.callback_query).catch((e) => { log(`daily callback failed: ${e?.message ?? e}`); return true; }))) return;
       if (reminders && (await reminders.handleCallback(update.callback_query).catch((e) => { log(`reminder callback failed: ${e?.message ?? e}`); return true; }))) return;
       if (kols && (await kols.handleCallback(update.callback_query).catch((e) => { log(`kol callback failed: ${e?.message ?? e}`); return true; }))) return;
       return await onVote(update.callback_query).catch((e) => log(`vote failed: ${e?.message ?? e}`));
@@ -334,6 +339,7 @@ export function createBot({ call, username, sdkOptions = {}, now = Date.now, log
     const text = msg?.text;
     if (!msg || !text) return;
     const cmd = parseCommand(text, username);
+    if (daily && cmd && (await daily.handleMessage(msg, cmd).catch((e) => { log(`daily failed: ${e?.message ?? e}`); return false; }))) return;
     if (gm && (await gm.handleMessage(msg, cmd).catch((e) => { log(`gm failed: ${e?.message ?? e}`); return false; }))) return;
     if (!cmd) return;
     try {
