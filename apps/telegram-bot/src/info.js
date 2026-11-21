@@ -90,6 +90,7 @@ export function createInfo(o) {
   }
 
   async function raffle() {
+    if (o.raffle?.cancelled) return '🎟 <b>No raffle running right now.</b>\n\nNew collabs and raffles are coming soon 👀';
     if (Date.now() - cache.at < 30_000 && cache.v) return cache.v;
     const r = o.raffle;
     const t = now();
@@ -142,6 +143,7 @@ export function createInfo(o) {
     ].filter((l) => l != null).join('\n');
   }
 
-  const raffleEnded = () => now() >= o.raffle.end;
-  return { raffle, stats, raffleEnded };
+  const raffleEnded = () => Boolean(o.raffle.cancelled) || now() >= o.raffle.end;
+  const raffleCancelled = () => Boolean(o.raffle.cancelled);
+  return { raffle, stats, raffleEnded, raffleCancelled };
 }

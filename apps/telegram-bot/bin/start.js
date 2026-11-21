@@ -40,11 +40,13 @@ for (const sig of ['SIGINT', 'SIGTERM']) {
 const explorer = process.env.EXPLORER_URL || 'https://robinhoodchain.blockscout.com';
 const tokenAddress = process.env.TOKEN_ADDRESS || '0x2fc6de9c65a620f918ca7d1191d3afa495ca2898';
 const rpc = createRpc(process.env.RPC_URL || 'https://rpc.mainnet.chain.robinhood.com');
-const raffleUrl = process.env.RAFFLE_URL || 'https://lockra.buzz/strat';
+const raffleUrl = process.env.RAFFLE_URL || 'https://lockra.buzz/lockra-raffle';
 const raffleStart = Date.parse(process.env.RAFFLE_START || '2026-11-18T14:00:00Z') / 1000;
 const raffleEnd = Date.parse(process.env.RAFFLE_END || '2026-11-22T16:00:00Z') / 1000;
+// Set RAFFLE_CANCELLED=1 to switch the raffle off.
+const raffleCancelled = process.env.RAFFLE_CANCELLED === '1';
 // Burn alerts only mention the raffle (tickets, button) while it is open.
-const raffleLive = () => { const t = Date.now() / 1000; return t >= raffleStart && t < raffleEnd; };
+const raffleLive = () => { const t = Date.now() / 1000; return !raffleCancelled && t >= raffleStart && t < raffleEnd; };
 let alerts = null;
 
 const chats = (process.env.ALERT_CHAT_IDS || '').split(',').map((s) => s.trim()).filter(Boolean);
@@ -109,10 +111,11 @@ const info = createInfo({
   raffle: {
     start: raffleStart,
     end: raffleEnd,
+    cancelled: raffleCancelled,
     ticketSize: BigInt(process.env.RAFFLE_TICKET || '10000') * 10n ** 18n,
     maxPerWallet: Number(process.env.RAFFLE_MAX_TICKETS || 5),
-    name: process.env.RAFFLE_NAME || 'LOCKRA × STRAT Raffle',
-    prize: process.env.RAFFLE_PRIZE || '$100 USDC by STRAT',
+    name: process.env.RAFFLE_NAME || 'LOCKRA Raffle',
+    prize: process.env.RAFFLE_PRIZE || '$50 in $LOCKRA by LOCKRA + $50 in $COCA by COCA',
     // Set RAFFLE_WINNER (wallet) and RAFFLE_WINNER_TICKET after the draw on the raffle page.
     winner: process.env.RAFFLE_WINNER ? { ticket: process.env.RAFFLE_WINNER_TICKET || '', wallet: process.env.RAFFLE_WINNER } : null,
   },
@@ -166,7 +169,7 @@ if (port) {
 const gm = createGm({ file: gmFile(process.env.GM_FILE || join(dirname(predictionsFile), 'gm.json')), call: telegram.call, log });
 const reminders = createReminders({ file: remindersFile(process.env.REMINDERS_FILE || join(dirname(predictionsFile), 'reminders.json')), call: telegram.call, open: (link) => open(link), username: me.username, log });
 reminders.run({ signal: controller.signal }).catch((e) => log(`reminders stopped: ${e.message}`));
-const bot = createBot({ call: telegram.call, username: me.username, log, info, predictions: { chats: predictChats, store: predictionStore }, scores, kols, gm, reminders });
+const bot = createBot({ call: telegram.call, username: me.username, log, info, predictions: { chats: predictChats, store: predictionStore }, scores, kols, gm, token: tokenAddress, buyUrl: process.env.BUY_URL || '', reminders });
 
 log(`@${me.username} is running`);
 await telegram.poll(bot.handleUpdate, { signal: controller.signal, log });
