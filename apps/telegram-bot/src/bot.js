@@ -66,7 +66,7 @@ const HELP = [
   '',
   '<b>KOLs</b>: /kols for the ranking. KOLs apply with /kol in a private chat.',
   '',
-  '<b>Daily Prediction</b>: every day at 10:00 CET, call ETH, BTC or $LOCKRA up or down. Votes are sealed. Correct calls climb the ranks: 🌱 Rookie (1) → 👁️ Seer (3) → 🔮 Oracle (7) → ⚡ Prophet (15) → 💎 Visionary (25) → ⏳ Timekeeper (40) → 👑 LOCKRA Legend (60), then /prestige. /rank · /ranks',
+  '<b>Daily Prediction</b>: every day at 10:00 CET: crypto up or down, or who wins a big football, tennis or basketball match. Votes are sealed. Correct calls climb the ranks: 🌱 Rookie (1) → 👁️ Seer (3) → 🔮 Oracle (7) → ⚡ Prophet (15) → 💎 Visionary (25) → ⏳ Timekeeper (40) → 👑 LOCKRA Legend (60), then /prestige. /rank · /ranks',
   '',
   '<b>GM streaks</b>: say gm in the group every day. 7 days 🥉, 14 days 🥈, 30 days 🥇 + GM Legend title. Every day counts, no resets. /streaks · /me',
   '',

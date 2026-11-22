@@ -15,6 +15,7 @@ import { createReminders, remindersFile } from '../src/reminders.js';
 import { createServer } from 'node:http';
 import { open, seal } from 'lockra-sdk';
 import { createDaily, dailyFile, createDailyPrice } from '../src/daily.js';
+import { createSports } from '../src/sports.js';
 
 const log = (msg) => console.log(`[lockra-bot] ${new Date().toISOString()} ${msg}`);
 
@@ -176,6 +177,7 @@ const daily = predictChats.length ? createDaily({
   call: telegram.call,
   chats: predictChats,
   price: createDailyPrice({ lookup: dexLookup(), token: tokenAddress }),
+  sports: createSports(),
   seal: async (text, unlockAt) => (await seal(text, { unlockAt, label: 'Daily Prediction votes', by: 'LOCKRA' })).link,
   log,
 }) : null;

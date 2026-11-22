@@ -1,4 +1,5 @@
-// Daily Prediction: one up-or-down question a day in the group.
+// Daily Prediction: one question a day in the group. It rotates between crypto (up or down) and
+// sports (football, tennis, basketball: who wins), falling back to crypto when no big match is on.
 //
 //   10:00 Madrid   the bot asks "Will ETH be higher or lower tomorrow at 10:00?" with two buttons.
 //   +5 hours       voting closes. Every vote is sealed in a LOCKRA capsule that opens at the result,
@@ -85,9 +86,31 @@ export function createDaily(o) {
   const nameOf = (f) => (f.username ? `@${f.username}` : [f.first_name, f.last_name].filter(Boolean).join(' ') || 'anon');
   const send = (chat, text, extra = {}) => call('sendMessage', { chat_id: chat, text, parse_mode: 'HTML', link_preview_options: { is_disabled: true }, ...extra });
 
+  const PRICE_OPTS = [{ k: 'u', label: '⬆️ Higher' }, { k: 'd', label: '⬇️ Lower' }];
+  const optsOf = (r) => r.options || PRICE_OPTS;
+  const labelOf = (r, k) => (optsOf(r).find((x) => x.k === k) || {}).label || k;
   const keyboard = (r) => r.closed
     ? { inline_keyboard: [[{ text: `🔒 Votes sealed · ${Object.keys(r.votes).length}`, callback_data: `dp:${r.id}:x` }]] }
-    : { inline_keyboard: [[{ text: '⬆️ Higher', callback_data: `dp:${r.id}:u` }, { text: '⬇️ Lower', callback_data: `dp:${r.id}:d` }], [{ text: `🗳 ${Object.keys(r.votes).length} sealed votes`, callback_data: `dp:${r.id}:x` }]] };
+    : { inline_keyboard: [optsOf(r).map((x) => ({ text: x.label, callback_data: `dp:${r.id}:${x.k}` })), [{ text: `🗳 ${Object.keys(r.votes).length} sealed votes`, callback_data: `dp:${r.id}:x` }]] };
+  const hhmm = (ms) => new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Madrid', hour: '2-digit', minute: '2-digit' }).format(new Date(ms));
+
+  /** Today's topic: rotates through crypto and sports; falls back to crypto when no good match exists. */
+  const TOPICS = ['crypto', 'football', 'tennis', 'football', 'basketball', 'crypto', 'football'];
+  async function sportsRound(sport, t, day) {
+    if (!o.sports) return null;
+    const utcDay = new Date(t).toISOString().slice(0, 10);
+    const m = await o.sports.pick(sport, utcDay, t + 90 * 60_000).catch((e) => { log(`daily sports ${sport}: ${e.message}`); return null; });
+    if (!m) return null;
+    const short = (n) => String(n).length > 18 ? String(n).slice(0, 17) + '…' : n;
+    const options = m.draw
+      ? [{ k: 'h', label: short(m.home) }, { k: 'e', label: 'Draw' }, { k: 'a', label: short(m.away) }]
+      : [{ k: 'h', label: short(m.home) }, { k: 'a', label: short(m.away) }];
+    return {
+      kind: 'match', sport, event: m.id, label: `${m.home} vs ${m.away}`, league: m.league, emoji: m.emoji, options,
+      startsAt: m.startsAt, closesAt: Math.min(t + voteMs, m.startsAt - 5 * 60_000), resolvesAt: m.startsAt + 2 * HOUR, giveUpAt: m.startsAt + 2 * DAY,
+      question: `${m.emoji} <b>${esc(m.home)} vs ${esc(m.away)}</b>${m.league ? ` · ${esc(m.league)}` : ''}\nKick-off ${hhmm(m.startsAt)} CET. Who wins?`,
+    };
+  }
 
   const user = (d, from) => {
     const u = d.users[from.id] || (d.users[from.id] = { id: from.id, name: '', wins: 0, total: 0, prestige: 0, streak: 0, best: 0, voteStreak: 0, lastVoteDay: null, badges: [] });
@@ -105,19 +128,25 @@ export function createDaily(o) {
     const t = now(); const p = madridParts(t);
     if (p.hour < openHour || Object.values(d.rounds).some((r) => r.day === p.day)) return null;
     const dayIndex = Math.floor(Date.parse(`${p.day}T00:00:00Z`) / DAY);
-    const asset = ASSETS[dayIndex % ASSETS.length];
-    const start = await price(asset.id).catch(() => null);
-    if (!(start > 0)) { log(`daily: no price for ${asset.id}`); return null; }
-    const r = { id: newId(), day: p.day, asset: asset.id, label: asset.label, start, openedAt: t, closesAt: t + voteMs, resolvesAt: t + DAY, votes: {}, closed: false, resolved: false, messages: {}, capsule: null };
+    const topic = o.topic ? o.topic(dayIndex) : TOPICS[dayIndex % TOPICS.length];
+    let spec = topic === 'crypto' ? null : await sportsRound(topic, t, p.day);
+    if (!spec) {
+      const asset = ASSETS[Math.floor(dayIndex / TOPICS.length + dayIndex) % ASSETS.length];
+      const start = await price(asset.id).catch(() => null);
+      if (!(start > 0)) { log(`daily: no price for ${asset.id}`); return null; }
+      spec = { kind: 'price', asset: asset.id, label: asset.label, start, closesAt: t + voteMs, resolvesAt: t + DAY,
+        question: `Will <b>${asset.label}</b> be higher or lower than <b>${fmtPrice(start)}</b> tomorrow at ${String(openHour).padStart(2, '0')}:00 CET?` };
+    }
+    const r = { id: newId(), day: p.day, openedAt: t, votes: {}, closed: false, resolved: false, messages: {}, capsule: null, ...spec };
     d.rounds[r.id] = r;
     await file.save();
     for (const chat of chats) {
       const text = [
         '🔮 <b>Daily Prediction</b>',
         '',
-        `Will <b>${r.label}</b> be higher or lower than <b>${fmtPrice(start)}</b> tomorrow at ${String(openHour).padStart(2, '0')}:00 CET?`,
+        r.question,
         '',
-        `🔒 Votes are sealed: nobody sees what anyone picked until the result. Voting closes in ${Math.round(voteMs / HOUR)}h.`,
+        `🔒 Votes are sealed: nobody sees what anyone picked until the result. Voting closes at ${hhmm(r.closesAt)} CET.`,
         '🏅 Correct calls climb the ranks. /ranks · /rank',
       ].join('\n');
       const m = await send(chat, text, { reply_markup: keyboard(r) }).catch((e) => log(`daily send failed: ${e.message}`));
@@ -128,7 +157,7 @@ export function createDaily(o) {
   }
 
   async function handleCallback(q) {
-    const m = /^dp:([0-9a-f]+):([udx])$/.exec(q?.data || '');
+    const m = /^dp:([0-9a-z]+):([a-z])$/.exec(q?.data || '');
     if (!m) return false;
     const answer = (text) => call('answerCallbackQuery', { callback_query_id: q.id, text }).catch(() => {});
     const d = await file.load();
@@ -136,6 +165,7 @@ export function createDaily(o) {
     if (!r) { await answer('This prediction is no longer available.'); return true; }
     if (m[2] === 'x') { await answer(r.closed ? 'Voting is closed. Votes open with the result.' : 'Votes stay sealed until the result 🔒'); return true; }
     if (r.closed || now() >= r.closesAt) { await answer('Voting is closed for today. Next one tomorrow at 10:00 CET!'); return true; }
+    if (!optsOf(r).some((x) => x.k === m[2])) { await answer('That option is not available.'); return true; }
     const u = user(d, q.from);
     const pick = m[2];
     const before = r.votes[q.from.id];
@@ -146,7 +176,7 @@ export function createDaily(o) {
       if (u.voteStreak >= 30 && !u.badges.includes('devotee')) u.badges.push('devotee');
     }
     await file.save();
-    await answer(`${before ? 'Changed' : 'Sealed'}: ${pick === 'u' ? '⬆️ Higher' : '⬇️ Lower'} 🔒`);
+    await answer(`${before ? 'Changed' : 'Sealed'}: ${labelOf(r, pick)} 🔒`);
     for (const [chat, mid] of Object.entries(r.messages)) call('editMessageReplyMarkup', { chat_id: chat, message_id: mid, reply_markup: keyboard(r) }).catch(() => {});
     return true;
   }
@@ -156,7 +186,7 @@ export function createDaily(o) {
     r.closed = true;
     const list = Object.entries(r.votes).map(([id, v]) => `${id}:${v}`).sort().join(',');
     if (o.seal && list) {
-      try { r.capsule = await o.seal(`LOCKRA Daily Prediction ${r.day} · ${r.label} from ${r.start} · votes ${list}`, new Date(r.resolvesAt)); } catch (e) { log(`daily seal failed: ${e.message}`); }
+      try { r.capsule = await o.seal(`LOCKRA Daily Prediction ${r.day} · ${r.label}${r.start ? ` from ${r.start}` : ''} · votes ${list}`, new Date(r.resolvesAt)); } catch (e) { log(`daily seal failed: ${e.message}`); }
     }
     for (const [chat, mid] of Object.entries(r.messages)) call('editMessageReplyMarkup', { chat_id: chat, message_id: mid, reply_markup: keyboard(r) }).catch(() => {});
     if (r.capsule) for (const chat of chats) await send(chat, `🔒 <b>Today's ${esc(r.label)} prediction is closed.</b> ${Object.keys(r.votes).length} votes are sealed in a LOCKRA capsule that opens with the result.`, { reply_markup: { inline_keyboard: [[{ text: 'See the sealed votes', url: r.capsule }]] } }).catch(() => {});
@@ -164,10 +194,24 @@ export function createDaily(o) {
 
   /** Score the round. Returns rank-ups so the caller can celebrate them. */
   async function resolveRound(d, r) {
-    const end = await price(r.asset).catch(() => null);
-    if (!(end > 0)) return false;
-    r.end = end; r.resolved = true;
-    const outcome = end > r.start ? 'u' : end < r.start ? 'd' : null;
+    let outcome, line;
+    if (r.kind === 'match') {
+      const res = await o.sports?.result(r.event).catch(() => null);
+      if (!res) {
+        if (now() < r.giveUpAt) { r.resolvesAt = now() + 30 * 60_000; return false; } // not finished yet: check again later
+        outcome = null; line = `${r.emoji} ${esc(r.label)}: no result found, round void.`;
+      } else {
+        outcome = res.outcome; r.score = res.score;
+        line = `${r.emoji} ${esc(r.label)} · <b>${res.score}</b> · ${outcome === 'e' ? 'Draw' : `${esc(labelOf(r, outcome))} win`}`;
+      }
+    } else {
+      const end = await price(r.asset).catch(() => null);
+      if (!(end > 0)) return false;
+      r.end = end;
+      outcome = end > r.start ? 'u' : end < r.start ? 'd' : null;
+      line = `${esc(r.label)}: ${fmtPrice(r.start)} → <b>${fmtPrice(end)}</b> · ${outcome === 'u' ? '⬆️ HIGHER' : outcome === 'd' ? '⬇️ LOWER' : '➡️ FLAT'}`;
+    }
+    r.resolved = true;
     r.outcome = outcome;
     const voters = Object.entries(r.votes);
     const winners = outcome ? voters.filter(([, v]) => v === outcome).map(([id]) => id) : [];
@@ -192,13 +236,12 @@ export function createDaily(o) {
       }
     }
     await file.save();
-    const dir = outcome === 'u' ? '⬆️ HIGHER' : outcome === 'd' ? '⬇️ LOWER' : '➡️ FLAT';
     const text = [
       '🔓 <b>Daily Prediction result</b>',
       '',
-      `${esc(r.label)}: ${fmtPrice(r.start)} → <b>${fmtPrice(end)}</b> · ${dir}`,
+      line,
       voters.length ? `✅ ${winners.length} called it · ❌ ${voters.length - winners.length} missed` : 'Nobody voted this time.',
-      outcome ? '' : 'Flat price: no points this round.',
+      outcome ? '' : 'No points this round.',
       'New question today at 10:00 CET 👀',
     ].filter((l) => l !== '').join('\n');
     const buttons = r.capsule ? { reply_markup: { inline_keyboard: [[{ text: '🔓 Verify the sealed votes', url: r.capsule }]] } } : {};
@@ -229,7 +272,7 @@ export function createDaily(o) {
     const d = await file.load();
     for (const r of Object.values(d.rounds)) {
       if (!r.closed && now() >= r.closesAt) { await closeRound(r); await file.save(); }
-      if (r.closed && !r.resolved && now() >= r.resolvesAt) await resolveRound(d, r);
+      if (r.closed && !r.resolved && now() >= r.resolvesAt) { await resolveRound(d, r); await file.save(); }
     }
     for (const [id, r] of Object.entries(d.rounds)) if (r.resolved && now() - r.resolvesAt > 7 * DAY) delete d.rounds[id];
     await file.save();
@@ -287,7 +330,7 @@ export function createDaily(o) {
     if (cmd.name === 'daily') {
       const d = await file.load();
       const r = Object.values(d.rounds).filter((x) => !x.resolved).sort((a, b) => b.openedAt - a.openedAt)[0];
-      await reply(r ? (r.closed ? `🔒 Today's ${esc(r.label)} prediction is closed. Result at 10:00 CET.` : `🔮 Today's question: will ${esc(r.label)} be higher or lower than ${fmtPrice(r.start)} tomorrow at 10:00 CET? Vote on today's question above 👆`) : '🔮 The Daily Prediction goes live every day at 10:00 CET.');
+      await reply(r ? (r.closed ? `🔒 Today's prediction (${esc(r.label)}) is closed. Result after ${r.kind === 'match' ? 'the final whistle' : '10:00 CET tomorrow'}.` : `🔮 Today's question:\n${r.question}\n\nVote on the message above 👆 (closes ${hhmm(r.closesAt)} CET)`) : '🔮 The Daily Prediction goes live every day at 10:00 CET.');
       return true;
     }
     return false;
