@@ -236,11 +236,15 @@ export function createDaily(o) {
       }
     }
     await file.save();
+    const named = winners.map((id) => d.users[id]).filter(Boolean).sort((a, b) => b.prestige - a.prestige || b.wins - a.wins);
+    const shown = named.slice(0, 15).map((u) => `• ${esc(u.name)} ${tag(u)}`);
+    if (named.length > 15) shown.push(`…and ${named.length - 15} more`);
     const text = [
       '🔓 <b>Daily Prediction result</b>',
       '',
       line,
       voters.length ? `✅ ${winners.length} called it · ❌ ${voters.length - winners.length} missed` : 'Nobody voted this time.',
+      shown.length ? `\n🏅 <b>Called it</b>\n${shown.join('\n')}` : '',
       outcome ? '' : 'No points this round.',
       'New question today at 10:00 CET 👀',
     ].filter((l) => l !== '').join('\n');
@@ -336,7 +340,14 @@ export function createDaily(o) {
     return false;
   }
 
-  return { tick, run, handleCallback, handleMessage, profile, board, prestige, openRound };
+  /** The rank tag of a member, or '' when they have none yet. Used by other features to show it next to the name. */
+  async function tagOf(userId) {
+    const d = await file.load();
+    const u = d.users[userId];
+    return u && (u.wins > 0 || u.prestige > 0) ? tag(u) : '';
+  }
+
+  return { tick, run, handleCallback, handleMessage, profile, board, prestige, openRound, tagOf };
 }
 
 /** ETH and BTC from CoinGecko, $LOCKRA market cap from DexScreener (up/down is the same either way). */

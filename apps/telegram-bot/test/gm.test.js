@@ -53,3 +53,11 @@ test('welcome message once per burst, with the CA and /learn', async () => {
   t = 61_000; await bot.handleUpdate(join(3));
   assert.ok(calls.some(([m, p]) => m === 'deleteMessage' && p.message_id === 1));
 });
+
+test('gm reply shows the prediction rank next to the name', async () => {
+  const { createGm, memoryGmFile } = await import('../src/gm.js');
+  const sent = [];
+  const gm = createGm({ file: memoryGmFile(), call: async (m, x) => { sent.push(x); return {}; }, rankTag: async (id) => (id === 1 ? '🔮 Oracle' : '') });
+  const t = await gm.record({ chat: { id: -1, type: 'supergroup' }, from: { id: 1, username: 'ana' }, message_id: 1, text: 'gm' });
+  assert.match(t, /@ana · 🔮 Oracle/);
+});

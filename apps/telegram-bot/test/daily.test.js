@@ -51,3 +51,15 @@ test('prestige needs LOCKRA Legend and resets wins with a star', async () => {
   const s = setup();
   assert.match(await s.daily.prestige({ id: 9 }), /need 60/);
 });
+
+test('result names the members who called it, with their rank', async () => {
+  const s = setup({ prices: [100, 120] });
+  s.at(T0); await s.daily.tick();
+  await s.vote(7, 'u'); await s.vote(8, 'd');
+  s.at(T0 + 25 * HOUR); await s.daily.tick();
+  const res = s.sent(/Called it/)[0][1].text;
+  assert.match(res, /@u7 🌱 Rookie/);
+  assert.doesNotMatch(res, /@u8/);
+  assert.equal(await s.daily.tagOf(7), '🌱 Rookie');
+  assert.equal(await s.daily.tagOf(8), '');
+});
