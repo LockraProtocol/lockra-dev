@@ -28,6 +28,17 @@ export const RANKS = [
 ];
 export const PRESTIGE = ['', '⭐', '⭐⭐', '🌟', '🔱'];
 export const MAX_PRESTIGE = PRESTIGE.length - 1;
+/** Short rank names that fit Telegram's 16-character admin title. */
+const TITLE_NAME = { legend: 'Legend' };
+
+/** The title shown next to a member's name in the group, e.g. "⭐ 🔮 Oracle". */
+export function rankTitle(u) {
+  const r = [...RANKS].reverse().find((x) => (u?.wins || 0) >= x.wins);
+  if (!r) return '';
+  const stars = PRESTIGE[u.prestige || 0];
+  const full = `${stars ? `${stars} ` : ''}${r.emoji} ${TITLE_NAME[r.id] || r.name}`;
+  return [...full].length <= 16 ? full : `${r.emoji} ${TITLE_NAME[r.id] || r.name}`;
+}
 export const BADGES = {
   sniper: { emoji: '🎯', name: 'Sniper', rule: '5 correct calls in a row' },
   fire: { emoji: '🔥', name: 'On Fire', rule: '10 correct calls in a row' },
@@ -250,7 +261,28 @@ export function createDaily(o) {
     return true;
   }
 
+  /**
+   * Show the rank next to the member's name. Telegram only allows that for admins, so the bot makes them an admin
+   * with no permissions at all and sets the title. Real admins and the owner are left untouched.
+   */
+  async function giveTitle(chat, u) {
+    const title = rankTitle(u);
+    if (!title) return false;
+    try {
+      const m = await call('getChatMember', { chat_id: chat, user_id: u.id });
+      if (m?.status === 'creator') return false;
+      if (m?.status === 'administrator' && !m.can_be_edited) return false; // promoted by a person: not ours to touch
+      if (m?.status === 'administrator' && (m.can_delete_messages || m.can_restrict_members || m.can_pin_messages || m.can_promote_members || m.can_change_info || m.can_invite_users || m.can_manage_chat)) return false;
+      if (m?.status !== 'administrator') {
+        await call('promoteChatMember', { chat_id: chat, user_id: u.id, is_anonymous: false, can_manage_chat: false, can_delete_messages: false, can_manage_video_chats: false, can_restrict_members: false, can_promote_members: false, can_change_info: false, can_invite_users: false, can_pin_messages: false, can_post_stories: false, can_edit_stories: false, can_delete_stories: false });
+      }
+      await call('setChatAdministratorCustomTitle', { chat_id: chat, user_id: u.id, custom_title: title });
+      return true;
+    } catch (e) { log(`daily title failed: ${e?.message ?? e}`); return false; }
+  }
+
   async function celebrate({ u, rank, badge }) {
+    if (rank) for (const chat of chats) await giveTitle(chat, u);
     for (const chat of chats) {
       if (rank) {
         await call('sendPhoto', {
@@ -310,6 +342,18 @@ export function createDaily(o) {
     return ['🔮 <b>Prediction ranks</b>', '', ...rows.map((u, i) => `${medal(i)} ${esc(u.name)} · ${tag(u)} · <b>${u.wins}</b> wins`), '', RANKS.map((x) => `${x.emoji} ${x.wins}`).join(' · ')].join('\n');
   }
 
+  /** Admin command: give every ranked member the title for the rank they already have. */
+  async function syncTitles(msg) {
+    try {
+      const me = await call('getChatMember', { chat_id: msg.chat.id, user_id: msg.from.id });
+      if (!['creator', 'administrator'].includes(me?.status) || (me.status === 'administrator' && !me.can_promote_members)) return 'Only group admins can do that.';
+    } catch { return 'Only group admins can do that.'; }
+    const d = await file.load();
+    let n = 0;
+    for (const u of Object.values(d.users)) if (rankTitle(u) && await giveTitle(msg.chat.id, u)) n += 1;
+    return n ? `🏅 Updated ${n} rank title${n === 1 ? '' : 's'}.` : 'No titles to update.';
+  }
+
   async function prestige(from) {
     const d = await file.load();
     const u = d.users[from.id];
@@ -317,6 +361,7 @@ export function createDaily(o) {
     if (u.prestige >= MAX_PRESTIGE) return '🔱 You are already at Master Prestige.';
     u.prestige += 1; u.wins = 0; u.streak = 0;
     await file.save();
+    for (const chat of chats) await giveTitle(chat, { ...u, wins: RANKS[0].wins });
     return `${PRESTIGE[u.prestige]} <b>${esc(u.name)}</b> entered Prestige ${u.prestige}! Back to 🌱 Rookie, star kept forever.`;
   }
 
@@ -327,6 +372,7 @@ export function createDaily(o) {
     if (cmd.name === 'rank') { await reply(await profile(msg.from)); return true; }
     if (cmd.name === 'ranks') { await reply(await board()); return true; }
     if (cmd.name === 'prestige') { await reply(await prestige(msg.from)); return true; }
+    if (cmd.name === 'titles') { await reply(await syncTitles(msg)); return true; }
     if (cmd.name === 'daily') {
       const d = await file.load();
       const r = Object.values(d.rounds).filter((x) => !x.resolved).sort((a, b) => b.openedAt - a.openedAt)[0];

@@ -14,6 +14,6 @@
   },
   "scripts": {
     "start": "node bin/start.js",
-    "test": "node --test test/parse.test.js test/bot.test.js test/telegram.test.js test/alerts.test.js test/info.test.js test/predictions.test.js test/v4.test.js test/scores.test.js test/kols.test.js test/gm.test.js test/reminders.test.js test/daily.test.js test/sports.test.js"
+    "test": "node --test test/parse.test.js test/bot.test.js test/telegram.test.js test/alerts.test.js test/info.test.js test/predictions.test.js test/v4.test.js test/scores.test.js test/kols.test.js test/gm.test.js test/reminders.test.js test/daily.test.js test/sports.test.js test/titles.test.js"
   }
 }
