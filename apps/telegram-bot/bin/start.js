@@ -168,7 +168,7 @@ if (port) {
     res.writeHead(404, cors); res.end();
   }).listen(port, () => log(`kols api on :${port}/kols.json`));
 }
-const gm = createGm({ file: gmFile(process.env.GM_FILE || join(dirname(predictionsFile), 'gm.json')), call: telegram.call, log });
+const gm = createGm({ file: gmFile(process.env.GM_FILE || join(dirname(predictionsFile), 'gm.json')), call: telegram.call, log, rankTag: (id) => daily?.tagOf(id) ?? '' });
 const reminders = createReminders({ file: remindersFile(process.env.REMINDERS_FILE || join(dirname(predictionsFile), 'reminders.json')), call: telegram.call, open: (link) => open(link), username: me.username, log });
 reminders.run({ signal: controller.signal }).catch((e) => log(`reminders stopped: ${e.message}`));
 // Daily Prediction: one sealed up-or-down call a day in the prediction chats.

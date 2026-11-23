@@ -44,7 +44,7 @@ const badgeLine = (u) => badgesOf(u).map((b) => b.emoji).join('');
 /**
  * @param {{ file: object, call: Function, now?: () => number, log?: Function }} o
  */
-export function createGm({ file, call, now = Date.now, log = () => {} }) {
+export function createGm({ file, call, now = Date.now, log = () => {}, rankTag = async () => '' }) {
   const reply = (msg, text) => call('sendMessage', { chat_id: msg.chat.id, text, parse_mode: 'HTML', reply_parameters: { message_id: msg.message_id, allow_sending_without_reply: true }, link_preview_options: { is_disabled: true } });
   const nameOf = (f) => (f.username ? `@${f.username}` : [f.first_name, f.last_name].filter(Boolean).join(' ') || 'anon');
 
@@ -73,7 +73,8 @@ export function createGm({ file, call, now = Date.now, log = () => {} }) {
     let legendNow = false;
     if (u.streak >= 30 && !u.legend) legendNow = u.legend = await giveLegend(msg.chat.id, msg.from.id);
     await file.save();
-    const who = esc(u.name);
+    const rt = await Promise.resolve().then(() => rankTag(msg.from.id)).catch(() => '');
+    const who = `${esc(u.name)}${rt ? ` · ${rt}` : ''}`;
     if (unlocked.length) {
       const b = unlocked[unlocked.length - 1];
       return [`🏅 <b>${who} unlocked ${b.emoji} ${b.name}!</b>`, `${u.streak} days of GM 🔥`, legendNow ? `👑 New title in the group: <b>${LEGEND_TITLE}</b>` : null].filter(Boolean).join('\n');
