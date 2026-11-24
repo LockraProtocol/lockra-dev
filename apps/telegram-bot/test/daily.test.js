@@ -1,9 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createDaily, memoryDailyFile, rankFor, madridParts } from '../src/daily.js';
+import { createDaily, memoryDailyFile, rankFor, cetParts } from '../src/daily.js';
 
 const HOUR = 3_600_000;
-// 2026-11-23 10:00 Madrid = 09:00 UTC
+// 2026-11-23 10:00 CET = 09:00 UTC
 const T0 = Date.UTC(2026, 10, 23, 9, 0);
 
 function setup({ prices = [100, 110] } = {}) {
@@ -20,10 +20,10 @@ test('ranks ladder', () => {
   assert.equal(rankFor(6).name, 'Seer');
   assert.equal(rankFor(7).name, 'Oracle');
   assert.equal(rankFor(60).name, 'LOCKRA Legend');
-  assert.equal(madridParts(T0).hour, 10);
+  assert.equal(cetParts(T0).hour, 10);
 });
 
-test('opens at 10:00 Madrid, once per day', async () => {
+test('opens at 10:00 CET, once per day', async () => {
   const s = setup();
   await s.daily.tick();
   assert.equal(s.sent(/Daily Prediction/).length, 0);
