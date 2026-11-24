@@ -1,4 +1,4 @@
-// GM streaks. Say gm in the group once a day (Madrid time) to keep your streak alive.
+// GM streaks. Say gm in the group once a day (CET) to keep your streak alive.
 // Missing a day does not reset it: every day with a gm counts. Badges at 7, 14 and 30 days; at 30 days the bot also gives a
 // "GM Legend" title (admin with no permissions) so it shows next to the name in the group.
 
@@ -14,9 +14,9 @@ export const LEGEND_TITLE = 'GM Legend';
 const GM_RE = /^\s*(gm+|good\s*morning|buenos\s*d[ií]as)\b/i;
 const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
-/** Calendar day in Madrid for a timestamp, as YYYY-MM-DD. */
-export function madridDay(ms) {
-  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Madrid', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(ms));
+/** Calendar day in CET for a timestamp, as YYYY-MM-DD. */
+export function cetDay(ms) {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'CET', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(ms));
 }
 const prevDay = (day) => { const d = new Date(`${day}T12:00:00Z`); d.setUTCDate(d.getUTCDate() - 1); return d.toISOString().slice(0, 10); };
 export const isGm = (text) => GM_RE.test(String(text || ''));
@@ -60,7 +60,7 @@ export function createGm({ file, call, now = Date.now, log = () => {}, rankTag =
   async function record(msg) {
     const d = await file.load();
     const key = `${msg.chat.id}:${msg.from.id}`;
-    const today = madridDay(now());
+    const today = cetDay(now());
     const u = d.users[key] || (d.users[key] = { chatId: msg.chat.id, userId: msg.from.id, name: '', streak: 0, best: 0, last: null, total: 0, legend: false });
     u.name = nameOf(msg.from);
     if (u.last === today) return null;
@@ -100,7 +100,7 @@ export function createGm({ file, call, now = Date.now, log = () => {}, rankTag =
     const d = await file.load();
     const u = d.users[`${msg.chat.id}:${msg.from.id}`];
     if (!u) return `☀️ ${esc(nameOf(msg.from))}, you have no GM streak yet. Say gm to start!`;
-    const today = madridDay(now());
+    const today = cetDay(now());
     const live = u.streak;
     const next = GM_BADGES.find((b) => live < b.days);
     return [

@@ -1,7 +1,7 @@
 // Daily Prediction: one question a day in the group. It rotates between crypto (up or down) and
 // sports (football, tennis, basketball: who wins), falling back to crypto when no big match is on.
 //
-//   10:00 Madrid   the bot asks "Will ETH be higher or lower tomorrow at 10:00?" with two buttons.
+//   10:00 CET   the bot asks "Will ETH be higher or lower tomorrow at 10:00?" with two buttons.
 //   +5 hours       voting closes. Every vote is sealed in a LOCKRA capsule that opens at the result,
 //                  so the votes are public and provable but nobody can read them early.
 //   +24 hours      the bot checks the price, opens the capsule and scores everyone.
@@ -43,10 +43,10 @@ export const ASSETS = [
 /** Rank for a number of wins (null before the first win). */
 export const rankFor = (wins) => [...RANKS].reverse().find((r) => wins >= r.wins) || null;
 
-/** Midnight-based helpers in Madrid time. */
-const madrid = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Madrid', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
-export function madridParts(ms) {
-  const p = Object.fromEntries(madrid.formatToParts(new Date(ms)).map((x) => [x.type, x.value]));
+/** Midnight-based helpers in CET. */
+const cet = new Intl.DateTimeFormat('en-CA', { timeZone: 'CET', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+export function cetParts(ms) {
+  const p = Object.fromEntries(cet.formatToParts(new Date(ms)).map((x) => [x.type, x.value]));
   return { day: `${p.year}-${p.month}-${p.day}`, hour: Number(p.hour), minute: Number(p.minute) };
 }
 const prevDay = (day) => { const d = new Date(`${day}T12:00:00Z`); d.setUTCDate(d.getUTCDate() - 1); return d.toISOString().slice(0, 10); };
@@ -92,7 +92,7 @@ export function createDaily(o) {
   const keyboard = (r) => r.closed
     ? { inline_keyboard: [[{ text: `🔒 Votes sealed · ${Object.keys(r.votes).length}`, callback_data: `dp:${r.id}:x` }]] }
     : { inline_keyboard: [optsOf(r).map((x) => ({ text: x.label, callback_data: `dp:${r.id}:${x.k}` })), [{ text: `🗳 ${Object.keys(r.votes).length} sealed votes`, callback_data: `dp:${r.id}:x` }]] };
-  const hhmm = (ms) => new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Madrid', hour: '2-digit', minute: '2-digit' }).format(new Date(ms));
+  const hhmm = (ms) => new Intl.DateTimeFormat('en-GB', { timeZone: 'CET', hour: '2-digit', minute: '2-digit' }).format(new Date(ms));
 
   /** Today's topic: rotates through crypto and sports; falls back to crypto when no good match exists. */
   const TOPICS = ['crypto', 'football', 'tennis', 'football', 'basketball', 'crypto', 'football'];
@@ -125,7 +125,7 @@ export function createDaily(o) {
   /** Open today's round if it is time and none exists yet. */
   async function openRound() {
     const d = await file.load();
-    const t = now(); const p = madridParts(t);
+    const t = now(); const p = cetParts(t);
     if (p.hour < openHour || Object.values(d.rounds).some((r) => r.day === p.day)) return null;
     const dayIndex = Math.floor(Date.parse(`${p.day}T00:00:00Z`) / DAY);
     const topic = o.topic ? o.topic(dayIndex) : TOPICS[dayIndex % TOPICS.length];

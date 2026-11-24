@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createGm, memoryGmFile, isGm, madridDay } from '../src/gm.js';
+import { createGm, memoryGmFile, isGm, cetDay } from '../src/gm.js';
 
 const DAY = 86_400_000;
 const setup = () => {
@@ -13,7 +13,7 @@ const setup = () => {
 test('gm detection', () => {
   for (const s of ['gm', 'GM fam', 'gmmm', 'Good morning', 'buenos días']) assert.ok(isGm(s), s);
   for (const s of ['gmail', 'hi', 'ngmi']) assert.ok(!isGm(s), s);
-  assert.equal(madridDay(Date.UTC(2026, 10, 18, 23, 30)), '2026-11-19');
+  assert.equal(cetDay(Date.UTC(2026, 10, 18, 23, 30)), '2026-11-19');
 });
 
 test('streak grows once per day and never resets', async () => {
