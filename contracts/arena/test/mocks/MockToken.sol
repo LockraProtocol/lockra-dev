@@ -71,3 +71,17 @@ contract ReentrantToken is MockToken {
         return super.transfer(to, amount);
     }
 }
+
+/// @notice Refuses every transfer to one blocked address, like a token with a blacklist.
+contract BlockingToken is MockToken {
+    address public blocked;
+
+    function block_(address who) external {
+        blocked = who;
+    }
+
+    function transfer(address to, uint256 amount) public override returns (bool) {
+        require(to != blocked, "blocked");
+        return super.transfer(to, amount);
+    }
+}

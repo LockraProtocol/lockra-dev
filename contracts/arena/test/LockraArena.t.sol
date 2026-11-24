@@ -4,7 +4,7 @@ pragma solidity 0.8.26;
 import {Test} from "forge-std/Test.sol";
 import {LockraArena} from "../src/LockraArena.sol";
 import {IERC20} from "../src/interfaces/IERC20.sol";
-import {MockToken, FeeOnTransferToken, ReentrantToken} from "./mocks/MockToken.sol";
+import {MockToken, FeeOnTransferToken, ReentrantToken, BlockingToken} from "./mocks/MockToken.sol";
 
 contract LockraArenaTest is Test {
     LockraArena internal arena;
@@ -563,5 +563,48 @@ contract LockraArenaTest is Test {
         assertTrue(evil.reentered());
         assertEq(bytes4(evil.reentryError()), LockraArena.Reentrancy.selector);
         assertEq(evil.balanceOf(alice), STAKE);
+    }
+
+    function test_blockedWinnerDoesNotLockTheGame() public {
+        BlockingToken bt = new BlockingToken();
+        LockraArena a = new LockraArena(IERC20(address(bt)), owner, FEE, WINDOW, 1, type(uint128).max);
+        bt.mint(alice, STAKE);
+        bt.mint(bob, STAKE);
+        vm.prank(alice);
+        bt.approve(address(a), type(uint256).max);
+        vm.prank(bob);
+        bt.approve(address(a), type(uint256).max);
+
+        vm.prank(alice);
+        uint256 id = a.createGame(STAKE, _commitOn(a, alice, ROCK, SALT_A), address(0));
+        vm.prank(bob);
+        a.joinGame(id, _commitOn(a, bob, SCISSORS, SALT_B));
+        bt.block_(alice);
+        vm.prank(alice);
+        a.reveal(id, ROCK, SALT_A);
+        vm.prank(bob);
+        a.reveal(id, SCISSORS, SALT_B); // settles even though the winner cannot receive
+
+        (uint256 payout, uint256 burned) = a.payoutFor(STAKE);
+        assertEq(uint256(a.getGame(id).status), uint256(LockraArena.Status.Settled));
+        assertEq(a.owed(alice), payout);
+        assertEq(bt.balanceOf(BURN), burned);
+
+        address safe = makeAddr("alice safe");
+        vm.prank(alice);
+        a.withdraw(safe);
+        assertEq(bt.balanceOf(safe), payout);
+        assertEq(a.owed(alice), 0);
+        assertEq(bt.balanceOf(address(a)), 0);
+
+        vm.prank(alice);
+        vm.expectRevert(LockraArena.NothingOwed.selector);
+        a.withdraw(safe);
+    }
+
+    function test_withdrawRejectsZeroAddress() public {
+        vm.prank(alice);
+        vm.expectRevert(LockraArena.ZeroAddress.selector);
+        arena.withdraw(address(0));
     }
 }

@@ -14,7 +14,9 @@ import {IERC20} from "./interfaces/IERC20.sol";
 ///
 /// Neither player can see the other's move before both are sealed, and nobody, the LOCKRA team
 /// included, can move the escrowed tokens anywhere other than back to the players or to the burn
-/// address. If a player refuses to reveal, the other player can claim the pot once the reveal
+/// address. If a payout ever fails (for example the token refuses one address), the amount is kept
+/// for that address and can be pulled later with `withdraw`, so one bad transfer can never lock a
+/// game or the other player's tokens. If a player refuses to reveal, the other player can claim the pot once the reveal
 /// window closes. If nobody reveals, both stakes are refunded in full.
 ///
 /// @dev Commitments are `keccak256(abi.encode(address(this), block.chainid, player, move, salt))`.
@@ -106,6 +108,9 @@ contract LockraArena {
 
     mapping(uint256 gameId => Game) private _games;
 
+    /// @notice Payouts that could not be sent when a game settled, waiting to be withdrawn.
+    mapping(address account => uint256) public owed;
+
     /// @dev Reentrancy lock: 1 = unlocked, 2 = locked.
     uint256 private _lock = 1;
 
@@ -122,6 +127,8 @@ contract LockraArena {
     event GameDrawn(uint256 indexed gameId);
     event GameRefunded(uint256 indexed gameId);
     event GameCancelled(uint256 indexed gameId);
+    event PayoutDeferred(address indexed account, uint256 amount);
+    event Withdrawn(address indexed account, address indexed to, uint256 amount);
 
     event FeeUpdated(uint16 feeBps);
     event RevealWindowUpdated(uint32 revealWindow);
@@ -157,6 +164,7 @@ contract LockraArena {
     error OnlyHost();
     error TransferFailed();
     error DepositMismatch(uint256 expected, uint256 received);
+    error NothingOwed();
 
     // ---------------------------------------------------------------------------------------------
     // Modifiers
@@ -321,6 +329,17 @@ contract LockraArena {
         _push(g.host, g.stake);
     }
 
+    /// @notice Pull a payout that could not be sent automatically. You may send it to another address
+    ///         you control, for example when your own address cannot receive the token.
+    function withdraw(address to) external nonReentrant {
+        if (to == address(0)) revert ZeroAddress();
+        uint256 amount = owed[msg.sender];
+        if (amount == 0) revert NothingOwed();
+        owed[msg.sender] = 0;
+        emit Withdrawn(msg.sender, to, amount);
+        _call(abi.encodeCall(IERC20.transfer, (to, amount)));
+    }
+
     // ---------------------------------------------------------------------------------------------
     // Views
     // ---------------------------------------------------------------------------------------------
@@ -431,8 +450,12 @@ contract LockraArena {
         if (received != amount) revert DepositMismatch(amount, received);
     }
 
+    /// @dev Never reverts: if the transfer fails, the amount is kept for `to` to withdraw later.
     function _push(address to, uint256 amount) private {
-        _call(abi.encodeCall(IERC20.transfer, (to, amount)));
+        (bool ok, bytes memory ret) = address(token).call(abi.encodeCall(IERC20.transfer, (to, amount)));
+        if (ok && (ret.length == 0 || (ret.length == 32 && abi.decode(ret, (bool))))) return;
+        owed[to] += amount;
+        emit PayoutDeferred(to, amount);
     }
 
     /// @dev Accepts tokens that return nothing as well as tokens that return a bool.

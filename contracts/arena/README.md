@@ -58,7 +58,13 @@ revealing, claiming or cancelling. A pause only blocks opening and joining games
 - Checks-effects-interactions everywhere, plus a reentrancy lock on every state-changing function.
 - Deposits are verified by balance difference: fee-on-transfer tokens are rejected instead of
   under-funding a pot.
-- Token calls accept both `bool`-returning and no-return ERC-20s and revert on failure.
+- Token calls accept both `bool`-returning and no-return ERC-20s. Deposits revert on failure.
+- Payouts never block a game: if a transfer to a player fails (for example a token that refuses one
+  address), the game still settles and the amount waits in `owed` for that player to `withdraw`,
+  to any address they choose.
+- Salts must come from a cryptographically secure random source (32 bytes from `crypto.getRandomValues`
+  in the browser). There are only three moves, so a guessable salt would leak the move.
+- Deploy with a multisig (for example a Safe) as the owner, never a single hot wallet.
 - No `delegatecall`, no upgradability, no external dependencies.
 - **Get an independent audit before deploying to mainnet.** This contract holds user funds.
 
