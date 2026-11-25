@@ -70,6 +70,8 @@ const HELP = [
   '',
   '<b>GM streaks</b>: say gm in the group every day. 7 days 🥉, 14 days 🥈, 30 days 🥇 + GM Legend title. Every day counts, no resets. /streaks · /me',
   '',
+  '<b>Arena</b>: /arena for rock, paper, scissors duels in $LOCKRA and the champions board.',
+  '',
   '<b>Raffle</b>: /raffle for tickets and the countdown.',
   '',
   '<b>Community</b>: /lockra for price, market cap and burns.',
@@ -114,7 +116,7 @@ const ERRORS = {
  *   scores?: { vote: Function, leaderboardText: Function },
  * }} options
  */
-export function createBot({ call, username, sdkOptions = {}, now = Date.now, log = () => {}, info = null, predictions = null, scores = null, kols = null, gm = null, token = '0x2fc6de9c65a620f918ca7d1191d3afa495ca2898', buyUrl = '', reminders = null, daily = null }) {
+export function createBot({ call, username, sdkOptions = {}, now = Date.now, log = () => {}, info = null, predictions = null, scores = null, kols = null, gm = null, token = '0x2fc6de9c65a620f918ca7d1191d3afa495ca2898', buyUrl = '', reminders = null, daily = null, arena = null }) {
   const seals = new Map(); // userId -> timestamps (ms), in memory only
   // Welcome: one message per burst of joins (raids stay quiet), the previous welcome is deleted.
   const welcomeState = new Map(); // chatId -> { at, messageId }
@@ -359,6 +361,9 @@ export function createBot({ call, username, sdkOptions = {}, now = Date.now, log
         case 'top':
           if (!scores) return;
           return await reply(msg, await scores.leaderboardText());
+        case 'arena':
+          if (!arena) return await reply(msg, '⚔️ <b>LOCKRA Arena</b> is coming soon: rock, paper, scissors for $LOCKRA, settled on-chain.');
+          return await reply(msg, await arena.board(), { link_preview_options: { is_disabled: true }, reply_markup: { inline_keyboard: [[{ text: '⚔️ Play in the Arena', url: arena.site }]] } });
         case 'learn':
           return await reply(msg, ABOUT, { link_preview_options: { is_disabled: true }, reply_markup: { inline_keyboard: [[{ text: '🔒 Seal a capsule', url: 'https://lockra.buzz/seal' }, { text: '🛒 Buy $LOCKRA', url: buyUrl || `https://fobo.fun/?token=${token}` }]] } });
         case 'raffle':
