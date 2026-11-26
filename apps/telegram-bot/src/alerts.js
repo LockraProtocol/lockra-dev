@@ -160,7 +160,16 @@ export function buyMessage({ ev, symbol, decimals, quoteSymbol, quoteDecimals, q
   return lines.filter((l) => l != null).join('\n');
 }
 
-export function burnMessage({ ev, symbol, decimals, links, ticketSize }) {
+export function burnMessage({ ev, symbol, decimals, links, ticketSize, arena }) {
+  // Fee burns from the Arena contract: named as the Arena and never counted as raffle tickets.
+  if (arena && ev.from?.toLowerCase() === arena.toLowerCase()) {
+    return [
+      `⚔️ <b>LOCKRA Arena Burn!</b>`,
+      '',
+      `🔥 ${formatUnits(ev.amount, decimals)} $${esc(symbol)} gone forever`,
+      `🏟 <a href="${links.explorer}/address/${ev.from}">Burned by the Arena fee</a>`,
+    ].join('\n');
+  }
   const tickets = ticketSize ? ev.amount / ticketSize : 0n;
   return [
     `🔥 <b>$${esc(symbol)} Burn!</b>`,
@@ -171,11 +180,15 @@ export function burnMessage({ ev, symbol, decimals, links, ticketSize }) {
   ].filter((l) => l != null).join('\n');
 }
 
+/** 'arena-burn' for fee burns from the Arena contract, else the event's own type. */
+export const alertType = (ev, arena) => (ev.type === 'burn' && arena && ev.from?.toLowerCase() === arena.toLowerCase() ? 'arena-burn' : ev.type);
+
 /**
  * Watch the chain and post alerts.
  * @param {{
  *   rpc: (method: string, params: any[]) => Promise<any>,
- *   send: (chatId: string, html: string, buttons: object, type: 'buy' | 'burn') => Promise<void>,
+ *   send: (chatId: string, html: string, buttons: object, type: 'buy' | 'burn' | 'arena-burn') => Promise<void>,
+ *   arena?: string,
  *   chats: string[], token: string, pools?: string[], explorer: string,
  *   minUsd?: number, step?: number, emoji?: string, burns?: boolean, ticketSize?: bigint,
  *   buttons?: { text: string, url: string }[],
@@ -300,10 +313,11 @@ export function createAlerts(o) {
         html = buyMessage({ ev, symbol, decimals, quoteSymbol: q.symbol, quoteDecimals: q.decimals, quoteUsd, supply: circulating, links: { explorer: o.explorer }, emoji: o.emoji, step: o.step, before, marketCap, usdEstimate, usdOverride });
       } else {
         if (!o.burns) continue;
-        html = burnMessage({ ev, symbol, decimals, links: { explorer: o.explorer }, ticketSize: typeof o.ticketSize === 'function' ? o.ticketSize() : o.ticketSize });
+        html = burnMessage({ ev, symbol, decimals, links: { explorer: o.explorer }, ticketSize: typeof o.ticketSize === 'function' ? o.ticketSize() : o.ticketSize, arena: o.arena });
       }
-      const buttons = typeof o.buttons === 'function' ? o.buttons(ev) : o.buttons || [];
-      for (const chat of o.chats) await o.send(chat, html, buttons, ev.type).catch((e) => log(`send to ${chat} failed: ${e.message}`));
+      const buttons = typeof o.buttons === 'function' ? o.buttons({ ...ev, type: alertType(ev, o.arena) }) : o.buttons || [];
+      const type = alertType(ev, o.arena);
+      for (const chat of o.chats) await o.send(chat, html, buttons, type).catch((e) => log(`send to ${chat} failed: ${e.message}`));
     }
   }
 

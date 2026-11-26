@@ -56,7 +56,7 @@ const chats = (process.env.ALERT_CHAT_IDS || '').split(',').map((s) => s.trim())
 if (chats.length) {
   const buyUrl = process.env.BUY_URL || `https://fobo.fun/?token=${tokenAddress}`;
   const buttons = (ev) => [
-    ev.type === 'buy' ? { text: '🛒 Buy $LOCKRA', url: buyUrl } : raffleLive() && { text: '🎟 Raffle', url: raffleUrl },
+    ev.type === 'buy' ? { text: '🛒 Buy $LOCKRA', url: buyUrl } : ev.type === 'arena-burn' ? { text: '⚔️ Play in the Arena', url: process.env.ARENA_URL || 'https://lockra.buzz/arena' } : raffleLive() && { text: '🎟 Raffle', url: raffleUrl },
     { text: 'Tx', url: `${explorer}/tx/${ev.tx}` },
     process.env.CHART_URL && ev.type === 'buy' && { text: '📈 Chart', url: process.env.CHART_URL },
   ].filter(Boolean);
@@ -64,6 +64,7 @@ if (chats.length) {
   // bot in a DM to get this), or a plain URL / file_id, sent as an animation.
   const parseMedia = (v) => { const m = /^(?:(video|animation):)?(.+)$/.exec(v || ''); return m ? { kind: m[1] || 'animation', id: m[2] } : null; };
   const mediaFor = { buy: parseMedia(process.env.ALERT_MEDIA), burn: parseMedia(process.env.BURN_MEDIA || process.env.ALERT_MEDIA) };
+  mediaFor['arena-burn'] = parseMedia(process.env.ARENA_BURN_MEDIA) || mediaFor.burn;
   const send = (chat_id, html, btns, type) => {
     const reply_markup = btns.length ? { inline_keyboard: [btns] } : undefined;
     const media = mediaFor[type];
@@ -99,6 +100,7 @@ if (chats.length) {
       ? `<tg-emoji emoji-id="${process.env.ALERT_EMOJI_ID.replace(/\D/g, '')}">${process.env.ALERT_EMOJI || '🔒'}</tg-emoji>`
       : process.env.ALERT_EMOJI || '🟢',
     burns: process.env.ALERT_BURNS !== 'false',
+    arena: process.env.ARENA_ADDRESS || '',
     ticketSize: () => (raffleLive() ? BigInt(process.env.RAFFLE_TICKET || '10000') * 10n ** 18n : null),
     buttons,
     log,
