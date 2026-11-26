@@ -16,6 +16,7 @@ import { createServer } from 'node:http';
 import { open, seal } from 'lockra-sdk';
 import { createDaily, dailyFile, createDailyPrice } from '../src/daily.js';
 import { createSports } from '../src/sports.js';
+import { createArena, arenaFile } from '../src/arena.js';
 
 const log = (msg) => console.log(`[lockra-bot] ${new Date().toISOString()} ${msg}`);
 
@@ -182,7 +183,19 @@ const daily = predictChats.length ? createDaily({
   log,
 }) : null;
 daily?.run({ signal: controller.signal }).catch((e) => log(`daily stopped: ${e.message}`));
-const bot = createBot({ call: telegram.call, username: me.username, log, info, predictions: { chats: predictChats, store: predictionStore }, scores, kols, gm, token: tokenAddress, buyUrl: process.env.BUY_URL || '', reminders, daily });
+const arenaAddress = (process.env.ARENA_ADDRESS || '').trim();
+const arena = /^0x[0-9a-fA-F]{40}$/.test(arenaAddress) ? createArena({
+  address: arenaAddress,
+  rpc: (m, p) => rpc(m, p),
+  file: arenaFile(process.env.ARENA_FILE || join(dirname(predictionsFile), 'arena.json')),
+  chats: (process.env.ARENA_CHAT_IDS || process.env.ALERT_CHAT_IDS || '').split(',').map((s) => s.trim()).filter(Boolean),
+  send: (chat_id, html, inline_keyboard) => telegram.call('sendMessage', { chat_id, text: html, parse_mode: 'HTML', link_preview_options: { is_disabled: true }, reply_markup: { inline_keyboard } }),
+  site: process.env.ARENA_URL || 'https://lockra.buzz/arena',
+  explorer,
+  log,
+}) : null;
+if (arena) { arena.run({ signal: controller.signal }).catch((e) => log(`arena stopped: ${e.message}`)); log('arena alerts on'); }
+const bot = createBot({ call: telegram.call, username: me.username, log, info, predictions: { chats: predictChats, store: predictionStore }, scores, kols, gm, token: tokenAddress, buyUrl: process.env.BUY_URL || '', reminders, daily, arena });
 
 log(`@${me.username} is running`);
 await telegram.poll(bot.handleUpdate, { signal: controller.signal, log });
