@@ -294,7 +294,7 @@ export function createBot({ call, username, sdkOptions = {}, now = Date.now, log
     return reply(msg, [
       '🎬 <b>Media for alerts</b>',
       '',
-      'Use this value on your host as <code>ALERT_MEDIA</code> (buys) or <code>BURN_MEDIA</code> (burns):',
+      'Use this value on your host as <code>ALERT_MEDIA</code> (buys), <code>BURN_MEDIA</code> (burns) or <code>ARENA_BURN_MEDIA</code> (Arena burns):',
       `<code>${kind}:${esc(id)}</code>`,
     ].join('\n'));
   }

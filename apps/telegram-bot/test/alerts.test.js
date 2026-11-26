@@ -487,3 +487,15 @@ test('a v4 buy out of the PoolManager still counts', () => {
   const [ev] = classify(logs, { token: TOKEN, contracts: new Set([PM]), signer: BUYER }).filter((e) => e.type === 'buy');
   assert.equal(ev.buyer, BUYER);
 });
+
+import { alertType } from '../src/alerts.js';
+test('Arena fee burns get their own message and alert type', () => {
+  const arena = '0xdEb2de828bd776D5AC575C153886A8c0D02f9dbC';
+  const ev = { type: 'burn', from: arena.toLowerCase(), tx: '0x1', amount: 500n * 10n ** 18n };
+  const html = burnMessage({ ev, symbol: 'LOCKRA', decimals: 18, links: { explorer: 'https://x' }, ticketSize: 10n ** 18n, arena });
+  assert.match(html, /LOCKRA Arena Burn!/);
+  assert.doesNotMatch(html, /raffle ticket/);
+  assert.equal(alertType(ev, arena), 'arena-burn');
+  assert.equal(alertType({ ...ev, from: '0x' + 'a'.repeat(40) }, arena), 'burn');
+  assert.equal(alertType(ev, ''), 'burn');
+});

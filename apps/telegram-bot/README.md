@@ -84,6 +84,7 @@ Turn it on:
 | `ALERT_EMOJI_ID` | No | A custom (animated) Telegram emoji for the strength line. Send the emoji to the bot in a private chat to get its id. Telegram may require the bot to own a Fragment username to show custom emoji; otherwise `ALERT_EMOJI` is shown. |
 | `ALERT_MEDIA` | No | GIF or video sent with each alert. Send it to the bot in a private chat and it replies with the exact value to use (`video:…` or `animation:…`). A direct URL also works. |
 | `BURN_MEDIA` | No | GIF or video for burn alerts, same format as `ALERT_MEDIA`. Defaults to `ALERT_MEDIA`. |
+| `ARENA_BURN_MEDIA` | No | GIF or video for Arena fee burns, same format as `ALERT_MEDIA`. Defaults to `BURN_MEDIA`. |
 | `ALERT_BURNS` | No | Set to `false` to skip burn alerts. |
 | `BUY_URL`, `CHART_URL` | No | Buy button link (default: the token on fobo.fun) and an optional Chart button. Each alert also has a Tx button. |
 | `RAFFLE_URL`, `RAFFLE_TICKET` | No | Raffle link and tokens per ticket. Defaults: lockra.buzz/raffle, `50000`. |
